@@ -9,6 +9,13 @@
 
 set -euo pipefail
 
+# cloud-init runs userdata as root WITHOUT $HOME set, which combined
+# with set -u (above) kills the script the first time anything reads
+# $HOME — uv's PATH export was the culprit on the first real run.
+# Set HOME explicitly so every subsequent installer (uv, npm, claude,
+# etc.) writes its dotfiles to /root/ as expected.
+export HOME=/root
+
 LOG_DIR=/var/log/prog-strength-developer
 mkdir -p "$LOG_DIR"
 WORKDIR=/workspace
