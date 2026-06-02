@@ -142,6 +142,10 @@ data "aws_iam_policy_document" "github_actions_inline" {
       "iam:GetRolePolicy",
       "iam:ListRolePolicies",
       "iam:ListAttachedRolePolicies",
+      # OIDC provider lookup for the github_actions_trust data source.
+      # Required so Terraform refresh can resolve the existing provider.
+      "iam:ListOpenIDConnectProviders",
+      "iam:GetOpenIDConnectProvider",
     ]
     resources = ["*"]
   }
@@ -172,6 +176,46 @@ data "aws_iam_policy_document" "github_actions_inline" {
       "ec2:DescribeRouteTables",
     ]
     resources = ["*"]
+  }
+
+  # CloudWatch Logs read — required for Terraform to refresh the
+  # log group resource on every plan. No write permissions because
+  # the log group is created locally via admin credentials.
+  statement {
+    sid = "CloudWatchLogsRead"
+    actions = [
+      "logs:DescribeLogGroups",
+      "logs:ListTagsForResource",
+      "logs:ListTagsLogGroup",
+    ]
+    resources = ["*"]
+  }
+
+  # SSM parameter read — for the al2023_ami AMI lookup. The
+  # `/aws/service/ami-*` parameter namespace is AWS-published and
+  # accessible to any role with this action.
+  statement {
+    sid = "SSMParameterRead"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}::parameter/aws/service/ami-amazon-linux-latest/*",
+    ]
+  }
+
+  # Secrets Manager describe — required for the two
+  # `data "aws_secretsmanager_secret"` blocks to refresh on each plan.
+  # Scoped to the developer namespace; the GHA role never needs to
+  # read the actual secret values (the worker EC2 does, via its own
+  # role and Secrets Manager:GetSecretValue).
+  statement {
+    sid     = "SecretsManagerDescribe"
+    actions = ["secretsmanager:DescribeSecret"]
+    resources = [
+      "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:prog-strength-developer/*",
+    ]
   }
 }
 
