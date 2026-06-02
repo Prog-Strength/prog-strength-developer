@@ -207,12 +207,17 @@ data "aws_iam_policy_document" "github_actions_inline" {
 
   # Secrets Manager describe — required for the two
   # `data "aws_secretsmanager_secret"` blocks to refresh on each plan.
-  # Scoped to the developer namespace; the GHA role never needs to
-  # read the actual secret values (the worker EC2 does, via its own
-  # role and Secrets Manager:GetSecretValue).
+  # GetResourcePolicy is read by the same data source even though we
+  # don't set a resource policy on either secret. Scoped to the
+  # developer namespace; the GHA role never needs to read the actual
+  # secret values (the worker EC2 does, via its own role and
+  # secretsmanager:GetSecretValue).
   statement {
-    sid     = "SecretsManagerDescribe"
-    actions = ["secretsmanager:DescribeSecret"]
+    sid = "SecretsManagerDescribe"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+    ]
     resources = [
       "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:prog-strength-developer/*",
     ]
