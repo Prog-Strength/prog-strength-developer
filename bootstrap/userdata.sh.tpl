@@ -160,18 +160,23 @@ DEV_HOME=/home/developer
 # Fetch secrets.
 # --------------------------------------------------------------------
 log "Fetching Claude credentials from Secrets Manager"
+# Claude Code on Linux reads ~/.claude/.credentials.json (leading dot
+# on the filename — it's a hidden file inside the already-hidden
+# .claude dir). On macOS the same JSON blob lives in Keychain; the
+# user extracts it via `security find-generic-password ... -w` when
+# seeding the secret. Either way the contents are the same.
 mkdir -p /root/.claude
 aws secretsmanager get-secret-value \
   --region "${aws_region}" \
   --secret-id "${claude_secret_name}" \
-  --query SecretString --output text > /root/.claude/credentials.json
-chmod 600 /root/.claude/credentials.json
+  --query SecretString --output text > /root/.claude/.credentials.json
+chmod 600 /root/.claude/.credentials.json
 
 # Also copy to the developer user's home so claude can authenticate
 # when invoked as developer below.
 mkdir -p "$DEV_HOME/.claude"
-cp /root/.claude/credentials.json "$DEV_HOME/.claude/credentials.json"
-chmod 600 "$DEV_HOME/.claude/credentials.json"
+cp /root/.claude/.credentials.json "$DEV_HOME/.claude/.credentials.json"
+chmod 600 "$DEV_HOME/.claude/.credentials.json"
 chown -R developer:developer "$DEV_HOME/.claude"
 
 log "Fetching GitHub App credentials"
@@ -334,6 +339,13 @@ sed \
 # developer) can read the prompt + cloned repos and write back the
 # branches/files it produces.
 chown -R developer:developer "$WORKDIR"
+
+# Diagnostic: confirm developer's claude credentials are in place
+# before invoking claude. A missing file here means the OAuth blob
+# never reached the worker, which is a one-line failure mode worth
+# surfacing distinctly from a "claude ran but auth failed" failure.
+log "Developer claude credentials present:"
+sudo -u developer ls -la "$DEV_HOME/.claude/" 2>&1 || true
 
 log "Starting Claude Code (as non-root user 'developer')"
 # --print is non-interactive batch mode.
