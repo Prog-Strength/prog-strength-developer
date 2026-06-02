@@ -64,25 +64,22 @@ aws iam create-open-id-connect-provider \
 
 (The thumbprint is GitHub's documented value; AWS will accept it.)
 
-## 4. Create Terraform state backend resources
+## 4. Create the Terraform state bucket
 
-The state bucket and lock table are managed OUTSIDE Terraform. Pick names
-that include your AWS account ID for uniqueness.
+The state bucket is managed OUTSIDE Terraform (chicken-and-egg — Terraform
+can't create the bucket it needs to store its own state). Pick a name that
+includes your AWS account ID for uniqueness.
+
+State locking uses Terraform 1.10+'s native S3 lockfile mode
+(`use_lockfile = true` in `backend.tf`). No DynamoDB table is required.
 
 ```bash
 export TF_BUCKET="prog-strength-tfstate-$(aws sts get-caller-identity --query Account --output text)"
-export TF_LOCK_TABLE="prog-strength-tflock"
 
 aws s3api create-bucket --bucket "$TF_BUCKET" --region us-east-1
 aws s3api put-bucket-versioning --bucket "$TF_BUCKET" --versioning-configuration Status=Enabled
 aws s3api put-bucket-encryption --bucket "$TF_BUCKET" \
   --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-
-aws dynamodb create-table \
-  --table-name "$TF_LOCK_TABLE" \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST
 ```
 
 ## 5. Push this repository
@@ -114,8 +111,7 @@ aws secretsmanager create-secret \
 cd terraform
 terraform init \
   -backend-config="bucket=$TF_BUCKET" \
-  -backend-config="region=us-east-1" \
-  -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+  -backend-config="region=us-east-1"
 
 terraform apply
 ```
@@ -129,7 +125,6 @@ variables → Actions:
 
 **Variables (not Secrets):**
 - `TF_STATE_BUCKET` — the bucket name from step 4.
-- `TF_STATE_LOCK_TABLE` — the DynamoDB table name from step 4.
 
 **Secrets:**
 - `AWS_GHA_ROLE_ARN` — the `github_actions_role_arn` Terraform output.

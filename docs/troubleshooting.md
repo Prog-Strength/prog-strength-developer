@@ -115,9 +115,34 @@ cd terraform
 terraform destroy
 ```
 
-Then manually delete the S3 state bucket, DynamoDB lock table, the two
-Secrets Manager entries, and the OIDC provider. The GitHub App can stay;
-just uninstall it from the org if you want it gone.
+Then manually delete the S3 state bucket, the two Secrets Manager entries,
+and the OIDC provider. The GitHub App can stay; just uninstall it from the
+org if you want it gone. (No DynamoDB table to clean up — locking is via
+the S3 `use_lockfile` native mode.)
+
+## "CloudWatch stream is completely empty for an instance that ran"
+
+The CloudWatch agent is installed and configured ~45 lines into the
+userdata script. Failures during the earlier dependency-install phase
+(e.g., a `dnf install` glitch) terminate the instance before the agent
+ever ships a byte to CloudWatch.
+
+Two recourses:
+
+1. **If the instance is still alive** (rare — the ERR trap usually
+   terminates it within seconds): SSM in and read
+   `/var/log/cloud-init-output.log` and `/var/log/prog-strength-developer/userdata.log`
+   directly. The userdata writes everything to those local files via the
+   `exec > >(tee)` redirect, so failure context is captured even when
+   nothing reaches CloudWatch.
+2. **If the instance is gone:** there's no remote log to read. Re-dispatch
+   with the same SOW and watch CloudWatch live (the agent will start
+   shipping bytes once it gets past `systemctl enable --now amazon-cloudwatch-agent`).
+   If the failure is reproducible at the same point, that's the diagnostic
+   evidence.
+
+A future hardening pass could pre-install + start the CloudWatch agent
+via a custom AMI, closing this gap entirely.
 
 ## "How do I see what Claude was thinking on a failed run?"
 
