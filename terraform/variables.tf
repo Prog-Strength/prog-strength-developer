@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region for the developer VPC and resources."
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "vpc_cidr" {
@@ -19,7 +19,7 @@ variable "public_subnet_cidr" {
 variable "availability_zone" {
   description = "AZ for the public subnet. Single AZ is fine for ephemeral compute."
   type        = string
-  default     = "us-east-1a"
+  default     = "us-east-2a"
 }
 
 variable "instance_type" {

@@ -76,7 +76,8 @@ State locking uses Terraform 1.10+'s native S3 lockfile mode
 ```bash
 export TF_BUCKET="prog-strength-tfstate-$(aws sts get-caller-identity --query Account --output text)"
 
-aws s3api create-bucket --bucket "$TF_BUCKET" --region us-east-1
+aws s3api create-bucket --bucket "$TF_BUCKET" --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
 aws s3api put-bucket-versioning --bucket "$TF_BUCKET" --versioning-configuration Status=Enabled
 aws s3api put-bucket-encryption --bucket "$TF_BUCKET" \
   --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
@@ -111,7 +112,7 @@ aws secretsmanager create-secret \
 cd terraform
 terraform init \
   -backend-config="bucket=$TF_BUCKET" \
-  -backend-config="region=us-east-1"
+  -backend-config="region=us-east-2"
 
 terraform apply
 ```
