@@ -1,5 +1,79 @@
 # Troubleshooting
 
+## Dispatching a SOW (important — read before each dispatch)
+
+**Use the `dispatch-sow` shell function below, not the GitHub UI's
+"Run workflow" button.** This is the load-bearing operational practice
+for the autonomous developer because of how Claude Code OAuth tokens
+rotate.
+
+### The OAuth rotation problem
+
+The Claude OAuth refresh token in Secrets Manager goes stale every
+time you use Claude Code locally — Anthropic invalidates the old
+refresh token the moment a new one is minted (a standard one-time-use
+refresh-token pattern). If you dispatch a worker, then use local
+Claude Code in between extraction and dispatch, the worker boots with
+already-rotated credentials and dies with `Failed to authenticate.
+API Error: 401 Invalid authentication credentials` at the claude
+invocation.
+
+The window of vulnerability is essentially "any time you use Claude
+Code on your laptop after the last re-seed." The cure is to make
+re-seeding part of every dispatch.
+
+### The fix: dispatch-sow shell function
+
+Add this to `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+dispatch-sow() {
+  local sow_path="${1:?usage: dispatch-sow <sow-path>  (e.g. sows/foo.md)}"
+  echo "==> Re-seeding Claude credentials from Keychain"
+  aws secretsmanager put-secret-value \
+    --region us-east-2 \
+    --secret-id prog-strength-developer/claude-credentials \
+    --secret-string "$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w)" \
+    > /dev/null \
+    && echo "    seeded" \
+    || { echo "    FAILED — aborting dispatch"; return 1; }
+  echo "==> Dispatching workflow"
+  gh workflow run dispatch-sow.yml \
+    --repo Prog-Strength/prog-strength-developer \
+    --field sow_path="$sow_path" \
+    && echo "    dispatched. Watch: https://github.com/Prog-Strength/prog-strength-developer/actions"
+}
+```
+
+Then:
+
+```bash
+dispatch-sow sows/whatever.md
+```
+
+The re-seed and dispatch run back-to-back with no chance for local
+Claude to rotate tokens in between.
+
+### Long-term hardening options
+
+If the per-dispatch re-seed becomes friction, the next steps in
+ascending cost are:
+
+1. **Dedicated Claude Code Max account for the worker.** Sign up on a
+   separate email, log in on a device you don't touch day-to-day,
+   extract once. The worker's account never rotates because nothing
+   else uses it. Cost: ~$200/month for a second Max subscription.
+
+2. **Switch the worker to `ANTHROPIC_API_KEY`.** Add the env var to
+   the worker's userdata and unset the Keychain extraction step. No
+   rotation problem because there's no refresh token to invalidate.
+   Bills per-token directly to your Anthropic API account, bypassing
+   Max. Likely the right call only if you outgrow Max-rate limits.
+
+3. **Service-account OAuth from Anthropic** (wishful — does not exist
+   as of 2026-06-02). If Anthropic exposes a long-lived service token
+   in the future, switch the worker to that.
+
 ## "Worker dispatched but no PRs ever appeared"
 
 Order of operations:
@@ -56,19 +130,26 @@ CloudWatch shows the Python urllib snippet failing on the
   permissions. Re-check the App configuration: Contents (write), Pull
   Requests (write), Workflows (write).
 
-### "Claude login fails with 401"
+### "Failed to authenticate. API Error: 401 Invalid authentication credentials"
 
-The OAuth refresh token in `~/.claude/credentials.json` has expired (or
-the file in Secrets Manager is stale). Re-run `claude login` locally,
-copy the new credentials.json, and re-seed the secret:
+The Claude OAuth tokens in Secrets Manager have been rotated out by
+your local Claude Code usage. See the "Dispatching a SOW" section at
+the top of this file for the explanation and the `dispatch-sow` shell
+function that prevents this from happening.
 
-```bash
-aws secretsmanager put-secret-value \
-  --secret-id prog-strength-developer/claude-credentials \
-  --secret-string "$(cat ~/.claude/credentials.json)"
-```
+If you dispatched via the GitHub UI (or otherwise without re-seeding
+first), just re-extract and re-dispatch using `dispatch-sow`. The
+existing in-flight worker has already self-terminated.
 
-Refresh tokens last several months; expect to do this 2–4× per year.
+If `dispatch-sow` itself fails immediately — meaning the re-seed
+step worked but the worker STILL gets 401 — then either:
+
+- The Keychain entry name on your machine isn't `Claude Code-credentials`.
+  Run `security dump-keychain | grep -i claude` to find the right
+  service name, then update the `dispatch-sow` function.
+- The OAuth tokens have been revoked entirely (you logged out, or
+  Anthropic revoked them for some reason). Run `claude login`
+  locally to mint a fresh set, then dispatch again.
 
 ### "PRs opened but worker still running"
 
