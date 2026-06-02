@@ -1,0 +1,28 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Secrets — never commit
+*.pem
+*.key
+.env
+.env.*
+credentials.json
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
