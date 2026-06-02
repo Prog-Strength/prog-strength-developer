@@ -42,10 +42,13 @@ jobs:
         working-directory: terraform
         # backend.tf uses use_lockfile = true (Terraform 1.10+ S3 native
         # locking), so no DynamoDB lock table is needed at runtime.
+        # TF_STATE_BUCKET and AWS_REGION are workflow env vars; ${VAR}
+        # is bash variable expansion, NOT a GitHub expression — GH only
+        # interprets ${{ ... }} so a single `$` here is correct.
         run: |
           terraform init \
-            -backend-config="bucket=$${TF_STATE_BUCKET}" \
-            -backend-config="region=$${AWS_REGION}"
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="region=${AWS_REGION}"
 
       - name: Terraform apply
         working-directory: terraform
