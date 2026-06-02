@@ -316,15 +316,15 @@ done
 
 # --------------------------------------------------------------------
 # Render the Claude prompt and run Claude Code.
+#
+# The prompt template lives in this repo at bootstrap/prompt.md.tpl.
+# Cloning prog-strength-developer at boot (rather than inlining the
+# template into userdata) keeps the rendered user_data well under
+# EC2's 16KB limit and lets iteration on the prompt happen via PR
+# instead of a launch-template replacement.
 # --------------------------------------------------------------------
-log "Writing prompt template to disk"
-# The prompt template is embedded via Terraform's templatefile(); the
-# single-quoted heredoc keeps bash from interpreting any $-prefixed
-# tokens inside the prompt itself.
-mkdir -p /opt/prog-strength-developer
-cat > /opt/prog-strength-developer/prompt.md.tpl <<'PROMPT_TEMPLATE_EOF'
-${prompt_template}
-PROMPT_TEMPLATE_EOF
+log "Cloning prog-strength-developer for prompt template"
+gh repo clone "${github_org}/prog-strength-developer" /opt/prog-strength-developer-repo
 
 log "Rendering Claude prompt for SOW ${sow_path}"
 SOW_SLUG=$(basename "${sow_path}" .md)
@@ -332,7 +332,7 @@ sed \
   -e "s|__SOW_PATH__|${sow_path}|g" \
   -e "s|__SOW_SLUG__|$SOW_SLUG|g" \
   -e "s|__GITHUB_ORG__|${github_org}|g" \
-  /opt/prog-strength-developer/prompt.md.tpl \
+  /opt/prog-strength-developer-repo/bootstrap/prompt.md.tpl \
   > "$WORKDIR/prompt.md"
 
 # Transfer the workspace to the developer user so claude (running as

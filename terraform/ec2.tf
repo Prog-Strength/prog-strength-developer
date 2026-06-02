@@ -7,14 +7,13 @@ data "aws_ssm_parameter" "al2023_ami" {
 
 # Render the userdata template with the runtime variables baked in.
 # templatefile() substitutes ${var} placeholders inside userdata.sh.tpl.
+#
+# The Claude prompt template is NOT inlined here — instead userdata
+# clones prog-strength-developer at boot and reads bootstrap/prompt.md.tpl
+# from that working copy. This keeps the rendered userdata under EC2's
+# 16KB user_data limit and means iterating on the prompt doesn't
+# require a launch-template replacement.
 locals {
-  # Raw contents of the Claude prompt template. file() does NOT process
-  # template syntax inside the contents, so the prompt's
-  # __PLACEHOLDER__ markers pass through verbatim. The prompt then gets
-  # embedded into userdata via a single-quoted heredoc, which protects
-  # any `$` characters from bash expansion at runtime.
-  prompt_template = file("${path.module}/../bootstrap/prompt.md.tpl")
-
   userdata = templatefile("${path.module}/../bootstrap/userdata.sh.tpl", {
     aws_region             = var.aws_region
     sow_path               = var.sow_path
@@ -23,7 +22,6 @@ locals {
     max_runtime_hours      = var.max_runtime_hours
     claude_secret_name     = data.aws_secretsmanager_secret.claude_credentials.name
     github_app_secret_name = data.aws_secretsmanager_secret.github_app.name
-    prompt_template        = local.prompt_template
   })
 }
 
