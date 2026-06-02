@@ -143,6 +143,20 @@ systemctl enable --now amazon-cloudwatch-agent
   -s
 
 # --------------------------------------------------------------------
+# Create the non-root user that will run Claude Code.
+#
+# `claude --dangerously-skip-permissions` refuses to run as root for
+# security reasons, and cloud-init runs userdata as root. Everything
+# above (package installs, CW agent, etc.) needed root, but the work
+# below (clones, gh ops, claude itself) can run unprivileged. We
+# create the user here so it exists before the secrets/auth setup
+# below, which writes credentials into both /root/ AND /home/developer/.
+# --------------------------------------------------------------------
+log "Creating non-root developer user (claude refuses to run as root)"
+useradd -m -s /bin/bash developer
+DEV_HOME=/home/developer
+
+# --------------------------------------------------------------------
 # Fetch secrets.
 # --------------------------------------------------------------------
 log "Fetching Claude credentials from Secrets Manager"
@@ -152,6 +166,13 @@ aws secretsmanager get-secret-value \
   --secret-id "${claude_secret_name}" \
   --query SecretString --output text > /root/.claude/credentials.json
 chmod 600 /root/.claude/credentials.json
+
+# Also copy to the developer user's home so claude can authenticate
+# when invoked as developer below.
+mkdir -p "$DEV_HOME/.claude"
+cp /root/.claude/credentials.json "$DEV_HOME/.claude/credentials.json"
+chmod 600 "$DEV_HOME/.claude/credentials.json"
+chown -R developer:developer "$DEV_HOME/.claude"
 
 log "Fetching GitHub App credentials"
 aws secretsmanager get-secret-value \
@@ -201,22 +222,31 @@ GH_TOKEN=$(python3 /root/mint-gh-token.py)
 # `<<<` here-string keeps the token off any pipe that could be teed
 # elsewhere. The token still transits the process boundary to gh's
 # stdin only.
+#
+# Authenticate gh as BOTH root (for the script's own clones below) and
+# developer (so claude's gh subprocesses below can push branches and
+# open PRs). Each user has its own gh config dir; tokens are stored
+# separately under /root/.config/gh and /home/developer/.config/gh.
 gh auth login --with-token <<< "$GH_TOKEN"
+sudo -u developer gh auth login --with-token <<< "$GH_TOKEN"
 unset GH_TOKEN
 
 # Background re-mint loop. Runs every 50 minutes (token TTL is 60 min).
-# Failures inside the loop log a warning rather than killing the run;
-# at worst gh's next operation 401s and Claude retries.
+# Refreshes both root's and developer's gh auth so neither hits a 401
+# during long-running SOWs. Failures inside the loop log a warning
+# rather than killing the run; at worst gh's next operation 401s and
+# Claude retries.
 (
   while true; do
     sleep 3000
     if NEW_TOKEN=$(python3 /root/mint-gh-token.py 2>/dev/null); then
-      gh auth login --with-token <<< "$NEW_TOKEN" >/dev/null 2>&1 \
-        && echo "[token-refresh $(date -u +%FT%TZ)] re-minted GitHub App token" \
-        || echo "[token-refresh $(date -u +%FT%TZ)] WARNING: re-login failed"
+      gh auth login --with-token <<< "$NEW_TOKEN" >/dev/null 2>&1 || true
+      sudo -u developer gh auth login --with-token <<< "$NEW_TOKEN" >/dev/null 2>&1 \
+        && echo "[token-refresh $(date -u +%FT%TZ)] re-minted GitHub App token (root + developer)" \
+        || echo "[token-refresh $(date -u +%FT%TZ)] WARNING: re-login failed for one or both users"
       unset NEW_TOKEN
     else
-      echo "[token-refresh $(date -u +%FT%TZ)] WARNING: GH token re-mint failed; continuing with stale token"
+      echo "[token-refresh $(date -u +%FT%TZ)] WARNING: GH token re-mint failed; continuing with stale tokens"
     fi
   done
 ) &
@@ -300,12 +330,20 @@ sed \
   /opt/prog-strength-developer/prompt.md.tpl \
   > "$WORKDIR/prompt.md"
 
-cd "$WORKDIR"
-log "Starting Claude Code"
+# Transfer the workspace to the developer user so claude (running as
+# developer) can read the prompt + cloned repos and write back the
+# branches/files it produces.
+chown -R developer:developer "$WORKDIR"
+
+log "Starting Claude Code (as non-root user 'developer')"
 # --print is non-interactive batch mode.
 # --dangerously-skip-permissions waives the interactive permission
-#   prompts that would otherwise block headless operation.
-claude --print --dangerously-skip-permissions < prompt.md \
+#   prompts that would otherwise block headless operation. claude
+#   refuses this flag under root, so we drop into the developer user
+#   via sudo for just this command.
+# sudo -i runs as a login shell so $HOME is /home/developer and the
+# default PATH includes the npm-global bin where claude installed.
+sudo -i -u developer -- bash -c "cd $WORKDIR && claude --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
   | tee "$LOG_DIR/claude.log"
 
 CLAUDE_EXIT=$?
