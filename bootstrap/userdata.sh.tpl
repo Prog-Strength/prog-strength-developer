@@ -19,6 +19,33 @@ exec > >(tee -a "$LOG_DIR/userdata.log") 2>&1
 
 log() { echo "[userdata $(date -u +%FT%TZ)] $*"; }
 
+# Defined BEFORE the ERR trap so failures during the early IMDS fetch
+# (or any other line above the trap's first chance to fire) still reach
+# a real function rather than a "command not found" no-op. INSTANCE_ID
+# is fetched lazily inside the function so it works even if the
+# top-of-script IMDS call hasn't succeeded yet.
+terminate_self() {
+  local iid="$${INSTANCE_ID:-}"
+  if [ -z "$iid" ]; then
+    local token
+    token=$(curl -fsS -X PUT \
+      -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' \
+      http://169.254.169.254/latest/api/token 2>/dev/null || true)
+    if [ -n "$token" ]; then
+      iid=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" \
+        http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)
+    fi
+  fi
+  log "Terminating instance $iid"
+  # Flush CloudWatch agent buffer before disappearing.
+  sleep 10
+  if [ -n "$iid" ]; then
+    aws ec2 terminate-instances \
+      --region "${aws_region}" \
+      --instance-ids "$iid" || true
+  fi
+}
+
 trap 'log "FATAL: userdata exited at line $LINENO with status $?"; terminate_self' ERR
 
 INSTANCE_ID=$(curl -fsS -H "X-aws-ec2-metadata-token: $(curl -fsS -X PUT \
@@ -26,15 +53,6 @@ INSTANCE_ID=$(curl -fsS -H "X-aws-ec2-metadata-token: $(curl -fsS -X PUT \
   http://169.254.169.254/latest/api/token)" \
   http://169.254.169.254/latest/meta-data/instance-id)
 export INSTANCE_ID
-
-terminate_self() {
-  log "Terminating instance $INSTANCE_ID"
-  # Flush CloudWatch agent buffer before disappearing.
-  sleep 10
-  aws ec2 terminate-instances \
-    --region "${aws_region}" \
-    --instance-ids "$INSTANCE_ID" || true
-}
 
 # --------------------------------------------------------------------
 # Install dependencies.
@@ -135,13 +153,14 @@ aws secretsmanager get-secret-value \
   --query SecretString --output text > /root/.github-app.json
 chmod 600 /root/.github-app.json
 
-# Mint an installation token. mint-gh-token.sh ships in this repo; the
-# launch template embedded it via cloud-init's write_files mechanism in
-# an earlier revision — for v1 we inline the minimal Python here to
-# avoid the second-asset coordination problem.
-log "Minting GitHub App installation token"
-GH_TOKEN=$(python3 - <<'PY'
-import json, os, time, base64, urllib.request, sys
+# Extract the JWT-minting Python to /root/mint-gh-token.py so it's
+# reusable from both the initial login and the periodic re-mint loop
+# below. Installation tokens expire in 1 hour; SOWs commonly run
+# longer than that, so we re-mint every 50 minutes to keep `gh push`
+# and `gh pr create` working through the whole run.
+log "Writing GitHub App token minter to /root/mint-gh-token.py"
+cat > /root/mint-gh-token.py <<'PY'
+import json, time, urllib.request, sys
 import jwt
 
 with open('/root/.github-app.json') as f:
@@ -168,8 +187,33 @@ with urllib.request.urlopen(req) as resp:
     body = json.loads(resp.read())
 print(body["token"])
 PY
-)
-echo "$GH_TOKEN" | gh auth login --with-token
+chmod 600 /root/mint-gh-token.py
+
+log "Minting initial GitHub App installation token"
+GH_TOKEN=$(python3 /root/mint-gh-token.py)
+# `<<<` here-string keeps the token off any pipe that could be teed
+# elsewhere. The token still transits the process boundary to gh's
+# stdin only.
+gh auth login --with-token <<< "$GH_TOKEN"
+unset GH_TOKEN
+
+# Background re-mint loop. Runs every 50 minutes (token TTL is 60 min).
+# Failures inside the loop log a warning rather than killing the run;
+# at worst gh's next operation 401s and Claude retries.
+(
+  while true; do
+    sleep 3000
+    if NEW_TOKEN=$(python3 /root/mint-gh-token.py 2>/dev/null); then
+      gh auth login --with-token <<< "$NEW_TOKEN" >/dev/null 2>&1 \
+        && echo "[token-refresh $(date -u +%FT%TZ)] re-minted GitHub App token" \
+        || echo "[token-refresh $(date -u +%FT%TZ)] WARNING: re-login failed"
+      unset NEW_TOKEN
+    else
+      echo "[token-refresh $(date -u +%FT%TZ)] WARNING: GH token re-mint failed; continuing with stale token"
+    fi
+  done
+) &
+echo $! > /run/gh-token-refresh.pid
 
 # --------------------------------------------------------------------
 # Set the 6h hard backstop. systemd-run --on-active is the simplest
