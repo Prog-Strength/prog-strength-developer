@@ -15,9 +15,8 @@ permissions:
 env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.10.5
-  # Set in repo Variables (not Secrets — these are non-sensitive).
+  # Set in repo Variables (not Secrets — non-sensitive).
   TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-  TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
 
 jobs:
   dispatch:
@@ -41,17 +40,22 @@ jobs:
 
       - name: Terraform init
         working-directory: terraform
+        # backend.tf uses use_lockfile = true (Terraform 1.10+ S3 native
+        # locking), so no DynamoDB lock table is needed at runtime.
         run: |
           terraform init \
             -backend-config="bucket=$${TF_STATE_BUCKET}" \
-            -backend-config="region=$${AWS_REGION}" \
-            -backend-config="dynamodb_table=$${TF_STATE_LOCK_TABLE}"
+            -backend-config="region=$${AWS_REGION}"
 
       - name: Terraform apply
         working-directory: terraform
-        run: |
-          terraform apply -auto-approve \
-            -var "sow_path=${{ inputs.sow_path }}"
+        # Pass sow_path via TF_VAR_ env var rather than a shell-quoted
+        # -var flag to close the command-injection vector that the
+        # inline ${{ inputs.sow_path }} interpolation would otherwise
+        # open. Terraform reads TF_VAR_sow_path automatically.
+        env:
+          TF_VAR_sow_path: ${{ inputs.sow_path }}
+        run: terraform apply -auto-approve
 
       - name: Summary
         run: |
