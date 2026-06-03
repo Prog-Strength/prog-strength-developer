@@ -74,6 +74,80 @@ ascending cost are:
    as of 2026-06-02). If Anthropic exposes a long-lived service token
    in the future, switch the worker to that.
 
+## Watching a worker live
+
+Every dispatch's GitHub Actions Summary now includes the exact
+`aws logs tail` command for that worker. Copy-paste it. The three
+streams CloudWatch will have for an in-flight worker are:
+
+| Stream                                       | What's in it                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `<sow-slug>/<instance-id>/claude`            | Claude's live `--verbose` output — tool calls, file reads/writes, subagents.  |
+| `<sow-slug>/<instance-id>/userdata`          | Bootstrap progress: package installs, secret fetches, repo clones, etc.       |
+| `<sow-slug>/<instance-id>/cloud-init`        | cloud-init's own log (the OS-level wrapper around userdata).                  |
+
+Most of the time you want the `/claude` stream:
+
+```bash
+aws logs tail /aws/ec2/prog-strength-developer \
+  --log-stream-names <sow-slug>/<instance-id>/claude \
+  --follow
+```
+
+`--follow` streams new lines as they arrive (lag is typically <5s once the
+CloudWatch agent is up). Drop `--follow` for a one-shot read of the last hour.
+
+If you don't know the instance ID, find it from the Actions Summary or:
+
+```bash
+aws ec2 describe-instances \
+  --filters 'Name=tag:Name,Values=prog-strength-developer-worker' \
+            'Name=instance-state-name,Values=pending,running' \
+  --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`SOW`]|[0].Value,LaunchTime]' \
+  --output table
+```
+
+## SSM into a running worker
+
+When CloudWatch is silent or you want to inspect filesystem state directly,
+shell into the worker via SSM:
+
+```bash
+aws ssm start-session --target <instance-id>
+```
+
+Once in the session:
+
+```bash
+sudo -i
+
+# Live-tail the same logs that ship to CloudWatch (bypass any agent
+# shipping delay or buffering).
+tail -f /var/log/prog-strength-developer/claude.log
+tail -f /var/log/prog-strength-developer/userdata.log
+
+# Is claude actually running?
+ps -ef | grep -E '[c]laude|[s]cript'
+
+# Is the CloudWatch agent healthy? (If not, that's why CloudWatch is empty.)
+systemctl status amazon-cloudwatch-agent
+journalctl -u amazon-cloudwatch-agent --no-pager -n 50
+
+# What does the workspace look like? (cloned repos, branches, prompt.md)
+ls /workspace
+sudo -u developer git -C /workspace/<repo> status
+sudo -u developer git -C /workspace/<repo> log --oneline -5
+```
+
+If Claude appears wedged (no progress in claude.log for several minutes,
+no CPU on `claude` in `top`), the cleanest recovery is to terminate the
+instance — Claude's partial PRs are still in GitHub if it got that far.
+
+```bash
+# From your laptop, NOT inside the SSM session:
+aws ec2 terminate-instances --instance-ids <instance-id>
+```
+
 ## "Worker dispatched but no PRs ever appeared"
 
 Order of operations:
@@ -86,22 +160,21 @@ Order of operations:
      --query 'Reservations[].Instances[].[InstanceId,LaunchTime]' \
      --output table
    ```
-   If one's still alive, either the work is in progress (check CloudWatch)
-   or the backstop hasn't fired yet.
+   If one's still alive, either the work is in progress (use the live-tail
+   command above to confirm) or the backstop hasn't fired yet.
 
-2. **Read CloudWatch logs.** Find the instance ID from the GitHub Actions
-   summary, then:
+2. **Read CloudWatch logs.** From the GitHub Actions Summary, grab the
+   `<sow-slug>/<instance-id>/claude` stream name and:
    ```bash
    aws logs tail /aws/ec2/prog-strength-developer \
-     --log-stream-names <instance-id> \
+     --log-stream-names <sow-slug>/<instance-id>/claude \
      --since 1h
    ```
-   Scan the last ~200 lines. Common failure modes are listed below.
+   Scan the last ~200 lines. If `/claude` is empty but `/userdata` has
+   content, bootstrap failed before reaching Claude — check
+   `<sow-slug>/<instance-id>/userdata` for the error.
 
-3. **SSH (well, SSM) into the box** if it's still alive:
-   ```bash
-   aws ssm start-session --target <instance-id>
-   ```
+3. **SSM into the box** if it's still alive (see the section above).
 
 ## Common failure modes
 
@@ -155,7 +228,8 @@ step worked but the worker STILL gets 401 — then either:
 
 Either Claude wrote PRs but didn't exit cleanly (the 6h backstop will
 eventually fire), or the script is stuck on a downstream step. SSM in
-and check `ps -ef | grep claude` and `tail -f /var/log/prog-strength-developer/*.log`.
+(see "SSM into a running worker" above) and check `ps -ef | grep claude`
+and `tail -f /var/log/prog-strength-developer/claude.log`.
 
 ### "Workflow fails on preflight check"
 
@@ -201,21 +275,22 @@ and the OIDC provider. The GitHub App can stay; just uninstall it from the
 org if you want it gone. (No DynamoDB table to clean up — locking is via
 the S3 `use_lockfile` native mode.)
 
-## "CloudWatch stream is completely empty for an instance that ran"
+## "CloudWatch streams are completely empty for an instance that ran"
 
-The CloudWatch agent is installed and configured ~45 lines into the
-userdata script. Failures during the earlier dependency-install phase
-(e.g., a `dnf install` glitch) terminate the instance before the agent
-ever ships a byte to CloudWatch.
+The CloudWatch agent is installed and configured partway through the
+userdata script (after the dependency-install phase). Failures during
+those early steps (e.g., a `dnf install` glitch) terminate the instance
+before the agent ever ships a byte to CloudWatch, so all three streams
+(`/userdata`, `/claude`, `/cloud-init`) stay empty.
 
 Two recourses:
 
 1. **If the instance is still alive** (rare — the ERR trap usually
-   terminates it within seconds): SSM in and read
-   `/var/log/cloud-init-output.log` and `/var/log/prog-strength-developer/userdata.log`
-   directly. The userdata writes everything to those local files via the
-   `exec > >(tee)` redirect, so failure context is captured even when
-   nothing reaches CloudWatch.
+   terminates it within seconds): SSM in (see "SSM into a running worker"
+   above) and read `/var/log/cloud-init-output.log` and
+   `/var/log/prog-strength-developer/userdata.log` directly. The userdata
+   writes everything to those local files via the `exec > >(tee)` redirect,
+   so failure context is captured even when nothing reaches CloudWatch.
 2. **If the instance is gone:** there's no remote log to read. Re-dispatch
    with the same SOW and watch CloudWatch live (the agent will start
    shipping bytes once it gets past `systemctl enable --now amazon-cloudwatch-agent`).
@@ -225,17 +300,40 @@ Two recourses:
 A future hardening pass could pre-install + start the CloudWatch agent
 via a custom AMI, closing this gap entirely.
 
+## "/claude stream is empty but /userdata is fine"
+
+Three possibilities, in order of likelihood:
+
+1. **Bootstrap failed before reaching Claude.** Read the tail of
+   `/userdata` — the last `log` line will tell you where it died.
+2. **Claude started but produced no output yet.** Now that claude runs
+   under `script -qfc` with `--verbose`, you should see progress within
+   seconds of "Starting Claude Code". If you don't, SSM in and check
+   `ps -ef | grep -E '[c]laude|[s]cript'` — if claude is running but
+   silent, that's an upstream issue (network to api.anthropic.com,
+   credentials, etc.).
+3. **CloudWatch agent failed to pick up the file.** SSM in and run
+   `journalctl -u amazon-cloudwatch-agent --no-pager -n 100` — look for
+   "file not found" or permission errors against
+   `/var/log/prog-strength-developer/claude.log`.
+
 ## "How do I see what Claude was thinking on a failed run?"
 
-CloudWatch retains 30 days of logs. The instance's log stream is named
-exactly the instance ID, viewable in the AWS Console under CloudWatch
-Logs → /aws/ec2/prog-strength-developer.
+CloudWatch retains 30 days of logs. Open the AWS Console → CloudWatch
+Logs → `/aws/ec2/prog-strength-developer`. Streams are named
+`<sow-slug>/<instance-id>/<source>`; the console renders the `/` as a
+folder hierarchy so all streams for one worker group together under
+the SOW.
 
-Within the stream:
+Three streams per worker:
 
-- `[userdata ...]` lines are progress markers from `userdata.sh.tpl`.
-- Plain lines (no prefix) are Claude's stdout — its thoughts, tool calls,
-  and subagent dispatches.
+- `.../<instance-id>/claude` — Claude's `--verbose` output: tool calls,
+  reasoning, subagent dispatches, file reads/writes. **This is where
+  failures usually show up.**
+- `.../<instance-id>/userdata` — `[userdata ...]` progress markers from
+  the bootstrap script. Useful for bootstrap-phase failures.
+- `.../<instance-id>/cloud-init` — cloud-init's own log, useful when
+  the box itself didn't boot cleanly.
 
-The last 50–100 lines are usually where the failure mode is most
-diagnostic.
+The last 50–100 lines of `/claude` are usually where the failure mode
+is most diagnostic.
