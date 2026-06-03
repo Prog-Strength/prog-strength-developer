@@ -137,7 +137,7 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<EOF
             "retention_in_days": -1
           },
           {
-            "file_path": "$LOG_DIR/claude.log",
+            "file_path": "$LOG_DIR/claude-pretty.log",
             "log_group_name": "${log_group_name}",
             "log_stream_name": "$STREAM_PREFIX/claude",
             "retention_in_days": -1
@@ -369,43 +369,50 @@ chown -R developer:developer "$WORKDIR"
 log "Developer claude credentials present:"
 sudo -u developer ls -la "$DEV_HOME/.claude/" 2>&1 || true
 
+# claude code 2.1.161 emits no stdout in --print mode; it writes
+# structured session events to ~/.claude/projects/<slug>/<uuid>.jsonl.
+# This sidecar tails those JSONLs and renders each event as one
+# timestamped line into claude-pretty.log, which the CloudWatch agent
+# ships to the "claude" stream. Without it the "claude" CW stream
+# stays empty even though Claude is doing work — it's writing to a
+# path the agent doesn't tail.
+log "Starting JSONL-to-text renderer sidecar"
+touch "$LOG_DIR/claude-pretty.log"
+(
+  until ls /home/developer/.claude/projects/*/*.jsonl >/dev/null 2>&1; do
+    sleep 2
+  done
+  tail -F -q /home/developer/.claude/projects/*/*.jsonl 2>/dev/null \
+    | jq --unbuffered -r '
+        . as $e |
+        if $e.type == "assistant" then
+          ($e.message.content // []) | map(
+            if .type == "text" then "[" + $e.timestamp + "] assistant: " + .text
+            elif .type == "tool_use" then "[" + $e.timestamp + "] tool-use " + .name + ": " + (.input | @json)
+            else empty end
+          )[]
+        elif $e.type == "user" then
+          ($e.message.content // []) | map(
+            if .type == "tool_result" then
+              "[" + $e.timestamp + "] tool-result: " + (((.content | tostring) | gsub("\n"; " | "))[:300])
+            else empty end
+          )[]
+        else empty end' \
+    >> "$LOG_DIR/claude-pretty.log"
+) &
+echo $! > /run/claude-pretty-renderer.pid
+
 log "Starting Claude Code (as non-root user 'developer')"
-# --print is non-interactive batch mode.
-# --verbose makes claude stream its intermediate steps (tool calls,
-#   subagent dispatches, file reads/writes) to stdout instead of
-#   buffering everything until the final response. Without it, operators
-#   tailing the log stream see total silence between "Starting Claude
-#   Code" and "Claude exited" — making it impossible to tell hung from
-#   busy.
-# --dangerously-skip-permissions waives the interactive permission
-#   prompts that would otherwise block headless operation. claude
-#   refuses this flag under root, so we drop into the developer user
-#   via sudo for just this command.
-# sudo -i runs as a login shell so $HOME is /home/developer and the
-# default PATH includes the npm-global bin where claude installed.
-#
-# `script -qfc` wraps claude in a pseudo-TTY:
-#   -q quiet (no script banner)
-#   -f flush after each write (so the CloudWatch agent picks lines up
-#      promptly instead of waiting for a block buffer to fill)
-#   -c <cmd> run command instead of an interactive shell
-#   /dev/null is the typescript file — we discard the recording; we
-#      only want the live stdout
-# The pty matters because Node.js (which claude is built on) switches
-# stdout to block-buffering when it's not a TTY, defeating any naive
-# tee/redirect approach. A pty also makes claude emit its richer
-# verbose output. We redirect script's stdout+stderr straight to
-# claude.log (no tee — tee would re-introduce the very buffering
-# layer we're trying to avoid; the CloudWatch agent tails the file
-# directly).
-# NO_COLOR=1 suppresses ANSI escapes that claude would otherwise emit
-# under a pty — CloudWatch console renders escape codes as visual
-# noise, and `aws logs tail` shows them literally. NO_COLOR is the
-# industry-standard opt-out (https://no-color.org) and claude honors it.
+# --print is non-interactive batch mode. --dangerously-skip-permissions
+# waives interactive permission prompts; claude refuses this flag under
+# root, so we drop into developer via sudo. sudo -i runs a login shell
+# so $HOME is /home/developer and PATH includes the npm-global bin
+# where claude installed. claude.log here captures the final --print
+# response and any stderr — kept local for SSM debugging, not shipped
+# to CW; the live readable view comes from claude-pretty.log via the
+# renderer sidecar above.
 sudo -i -u developer -- \
-  script -qfc \
-    "cd $WORKDIR && NO_COLOR=1 claude --print --verbose --dangerously-skip-permissions < $WORKDIR/prompt.md" \
-    /dev/null \
+  bash -c "cd $WORKDIR && claude --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
   > "$LOG_DIR/claude.log" 2>&1
 
 CLAUDE_EXIT=$?

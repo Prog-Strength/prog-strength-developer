@@ -1,5 +1,24 @@
 # Troubleshooting
 
+## Table of contents
+
+- [Dispatching a SOW (read before every dispatch)](#dispatching-a-sow-important--read-before-each-dispatch)
+- [Watching a worker live](#watching-a-worker-live)
+- [SSM into a running worker](#ssm-into-a-running-worker)
+- ["Worker dispatched but no PRs ever appeared"](#worker-dispatched-but-no-prs-ever-appeared)
+- [Common failure modes](#common-failure-modes)
+  - [Bootstrap dies fetching secrets](#bootstrap-dies-fetching-secrets)
+  - [GitHub App token mint fails with 401](#github-app-token-mint-fails-with-401)
+  - [Claude auth 401: invalid authentication credentials](#failed-to-authenticate-api-error-401-invalid-authentication-credentials)
+  - [PRs opened but worker still running](#prs-opened-but-worker-still-running)
+  - [Workflow fails on preflight check](#workflow-fails-on-preflight-check)
+  - [Terraform: OIDC provider does not exist](#terraform-apply-fails-with-oidc-provider-does-not-exist)
+  - [Terraform: launch template recreated every run](#terraform-plan-wants-to-destroy-and-recreate-the-launch-template-every-run)
+- ["I want to nuke everything and start over"](#i-want-to-nuke-everything-and-start-over)
+- ["CloudWatch streams are completely empty for an instance that ran"](#cloudwatch-streams-are-completely-empty-for-an-instance-that-ran)
+- ["/claude stream is empty but /userdata is fine"](#claude-stream-is-empty-but-userdata-is-fine)
+- ["How do I see what Claude was thinking on a failed run?"](#how-do-i-see-what-claude-was-thinking-on-a-failed-run)
+
 ## Dispatching a SOW (important — read before each dispatch)
 
 **Use the `dispatch-sow` shell function below, not the GitHub UI's
@@ -80,11 +99,11 @@ Every dispatch's GitHub Actions Summary now includes the exact
 `aws logs tail` command for that worker. Copy-paste it. The three
 streams CloudWatch will have for an in-flight worker are:
 
-| Stream                                       | What's in it                                                                  |
-| -------------------------------------------- | ----------------------------------------------------------------------------- |
-| `<sow-slug>/<instance-id>/claude`            | Claude's live `--verbose` output — tool calls, file reads/writes, subagents.  |
-| `<sow-slug>/<instance-id>/userdata`          | Bootstrap progress: package installs, secret fetches, repo clones, etc.       |
-| `<sow-slug>/<instance-id>/cloud-init`        | cloud-init's own log (the OS-level wrapper around userdata).                  |
+| Stream                                       | What's in it                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<sow-slug>/<instance-id>/claude`            | Rendered claude code session events — one line per `tool-use` / `tool-result` / `assistant` turn, decoded by the renderer sidecar from claude's native JSONL transcript.  |
+| `<sow-slug>/<instance-id>/userdata`          | Bootstrap progress: package installs, secret fetches, repo clones, etc.                                                                                                   |
+| `<sow-slug>/<instance-id>/cloud-init`        | cloud-init's own log (the OS-level wrapper around userdata).                                                                                                              |
 
 Most of the time you want the `/claude` stream:
 
@@ -123,11 +142,18 @@ sudo -i
 
 # Live-tail the same logs that ship to CloudWatch (bypass any agent
 # shipping delay or buffering).
-tail -f /var/log/prog-strength-developer/claude.log
-tail -f /var/log/prog-strength-developer/userdata.log
+tail -f /var/log/prog-strength-developer/claude-pretty.log    # rendered events stream (== "claude" CW stream)
+tail -f /var/log/prog-strength-developer/userdata.log         # bootstrap progress
+
+# Raw JSONL transcript — machine-truth, every assistant turn / tool
+# use / tool result with full content. The renderer sidecar tails
+# these and produces claude-pretty.log; read the source directly
+# when you suspect the renderer is at fault or need un-truncated
+# tool output.
+sudo tail -f /home/developer/.claude/projects/*/*.jsonl
 
 # Is claude actually running?
-ps -ef | grep -E '[c]laude|[s]cript'
+ps -ef | grep -E '[c]laude|[j]q|[t]ail.*projects'
 
 # Is the CloudWatch agent healthy? (If not, that's why CloudWatch is empty.)
 systemctl status amazon-cloudwatch-agent
@@ -139,9 +165,10 @@ sudo -u developer git -C /workspace/<repo> status
 sudo -u developer git -C /workspace/<repo> log --oneline -5
 ```
 
-If Claude appears wedged (no progress in claude.log for several minutes,
-no CPU on `claude` in `top`), the cleanest recovery is to terminate the
-instance — Claude's partial PRs are still in GitHub if it got that far.
+If Claude appears wedged (no progress in claude-pretty.log for several
+minutes, no CPU on `claude` in `top`), the cleanest recovery is to
+terminate the instance — Claude's partial PRs are still in GitHub if
+it got that far.
 
 ```bash
 # From your laptop, NOT inside the SSM session:
@@ -229,7 +256,7 @@ step worked but the worker STILL gets 401 — then either:
 Either Claude wrote PRs but didn't exit cleanly (the 6h backstop will
 eventually fire), or the script is stuck on a downstream step. SSM in
 (see "SSM into a running worker" above) and check `ps -ef | grep claude`
-and `tail -f /var/log/prog-strength-developer/claude.log`.
+and `tail -f /var/log/prog-strength-developer/claude-pretty.log`.
 
 ### "Workflow fails on preflight check"
 
@@ -302,20 +329,46 @@ via a custom AMI, closing this gap entirely.
 
 ## "/claude stream is empty but /userdata is fine"
 
-Three possibilities, in order of likelihood:
+The `/claude` stream is **not** populated by claude's stdout — claude
+code 2.1.161 emits nothing to stdout in `--print` mode. It writes
+structured events to `~/.claude/projects/<slug>/<uuid>.jsonl`, and a
+renderer sidecar in userdata.sh.tpl tails those files, decodes each
+event into one human-readable line, and appends to
+`/var/log/prog-strength-developer/claude-pretty.log`, which the
+CloudWatch agent ships as the `claude` stream.
+
+Three possibilities for an empty `/claude` stream, in order of likelihood:
 
 1. **Bootstrap failed before reaching Claude.** Read the tail of
    `/userdata` — the last `log` line will tell you where it died.
-2. **Claude started but produced no output yet.** Now that claude runs
-   under `script -qfc` with `--verbose`, you should see progress within
-   seconds of "Starting Claude Code". If you don't, SSM in and check
-   `ps -ef | grep -E '[c]laude|[s]cript'` — if claude is running but
-   silent, that's an upstream issue (network to api.anthropic.com,
-   credentials, etc.).
+2. **The renderer sidecar isn't running, or the source JSONL hasn't
+   appeared yet.** SSM in and check:
+   ```bash
+   # Is the sidecar pipeline alive? (look for the jq + tail processes)
+   ps -ef | grep -E '[j]q|[t]ail.*projects'
+   cat /run/claude-pretty-renderer.pid 2>/dev/null
+
+   # Is the source JSONL being written?
+   sudo ls -la /home/developer/.claude/projects/*/
+
+   # Is the rendered file growing?
+   ls -la /var/log/prog-strength-developer/claude-pretty.log
+   ```
+   If the JSONL is growing but `claude-pretty.log` isn't, jq is stuck
+   or died — kill the pid in `/run/claude-pretty-renderer.pid` and
+   re-run the sidecar block by hand, or terminate the instance and
+   redispatch.
 3. **CloudWatch agent failed to pick up the file.** SSM in and run
    `journalctl -u amazon-cloudwatch-agent --no-pager -n 100` — look for
    "file not found" or permission errors against
-   `/var/log/prog-strength-developer/claude.log`.
+   `/var/log/prog-strength-developer/claude-pretty.log`.
+
+**Historical note (pre-renderer-sidecar workers):** Older launch
+template versions ran claude under `script -qfc` with `--verbose`
+expecting verbose output to stream to stdout. It never did — that's
+why this stream was empty for so long. If you find a worker still
+using `script -qfc` in its userdata, terraform apply hasn't picked
+up the renderer-based version yet.
 
 ## "How do I see what Claude was thinking on a failed run?"
 
@@ -327,13 +380,17 @@ the SOW.
 
 Three streams per worker:
 
-- `.../<instance-id>/claude` — Claude's `--verbose` output: tool calls,
-  reasoning, subagent dispatches, file reads/writes. **This is where
-  failures usually show up.**
+- `.../<instance-id>/claude` — rendered session events: `tool-use`,
+  `tool-result`, `assistant`, one per JSON event from the renderer
+  sidecar. **This is where failures usually show up.**
 - `.../<instance-id>/userdata` — `[userdata ...]` progress markers from
   the bootstrap script. Useful for bootstrap-phase failures.
 - `.../<instance-id>/cloud-init` — cloud-init's own log, useful when
   the box itself didn't boot cleanly.
 
 The last 50–100 lines of `/claude` are usually where the failure mode
-is most diagnostic.
+is most diagnostic. For deeper inspection (full prompts, un-truncated
+tool input/output, subagent sidechain calls), SSM into a still-running
+worker and read the source JSONL directly at
+`/home/developer/.claude/projects/*/*.jsonl` — the rendered stream
+truncates tool-result content at 300 chars; the source has everything.
