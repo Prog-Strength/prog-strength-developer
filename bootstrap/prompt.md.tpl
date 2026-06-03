@@ -26,11 +26,29 @@ Follow the standard Prog Strength autonomous workflow:
    skill and follow it exactly. Do not skip review stages — every task
    should be implemented by a subagent, then spec-reviewed and
    code-quality-reviewed before moving on.
-4. **Open PRs.** After all tasks complete, push each feature branch and
-   run `gh pr create` in each modified repository. The GitHub App you're
-   authenticated as has push access. PR titles and bodies should follow
-   the format you'll see in recent merged PRs in those repos.
-5. **Exit.** The system will terminate the instance.
+4. **Mark the SOW as shipped.** In `/workspace/prog-strength-docs`,
+   check out (or create) the `feat/__SOW_SLUG__` branch and edit
+   `__SOW_PATH__`:
+   - YAML frontmatter: set `status: shipped`.
+   - Body header: change the `**Status**: …` value to `Shipped`.
+   - Body header: set `**Last updated**: __TODAY__`.
+
+   Commit the change with a message like
+   `docs: mark __SOW_SLUG__ as shipped`. Do this even if
+   `prog-strength-docs` was not in the SOW's `repos:` list — the
+   status flip itself is the reason for the docs PR. If
+   `prog-strength-docs` already has commits on `feat/__SOW_SLUG__`
+   from step 3, append the status flip to that branch instead of
+   starting a new one.
+5. **Open PRs.** After all tasks complete, push each feature branch
+   and run `gh pr create` in each modified repository, always
+   including `prog-strength-docs` (because of step 4). The GitHub App
+   you're authenticated as has push access. PR titles and bodies
+   should follow the format you'll see in recent merged PRs in those
+   repos. In the `prog-strength-docs` PR body, note that merging it
+   marks the SOW as shipped — that's the owner's one-action signal
+   that the work is complete.
+6. **Exit.** The system will terminate the instance.
 
 # Constraints
 
