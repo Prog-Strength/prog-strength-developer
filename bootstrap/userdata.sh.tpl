@@ -332,6 +332,7 @@ sed \
   -e "s|__SOW_PATH__|${sow_path}|g" \
   -e "s|__SOW_SLUG__|$SOW_SLUG|g" \
   -e "s|__GITHUB_ORG__|${github_org}|g" \
+  -e "s|__TODAY__|$(date -u +%F)|g" \
   /opt/prog-strength-developer-repo/bootstrap/prompt.md.tpl \
   > "$WORKDIR/prompt.md"
 
