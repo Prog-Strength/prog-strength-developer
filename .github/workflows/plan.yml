@@ -1,0 +1,132 @@
+name: Terraform Plan
+
+# Runs on every PR targeting main. Enforces formatting and validation
+# as gating checks, then runs `terraform plan` and posts the output as
+# a sticky comment on the PR so a reviewer can see what `terraform
+# apply` would do before merging. Apply itself runs on push to main —
+# see apply.yml.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write       # AWS OIDC
+  contents: read
+  pull-requests: write  # sticky plan comment
+
+concurrency:
+  # One in-flight plan per PR. New pushes cancel the previous run —
+  # the latest commit is the only plan that matters for review.
+  group: terraform-plan-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-2
+  TF_VERSION: 1.10.5
+  # Same workflow Variable that dispatch-sow.yml reads.
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # Gating checks first — failing fmt/validate is an unambiguous
+      # "do not merge" signal, so a confusing plan comment doesn't get
+      # posted on top of broken code.
+      - name: terraform fmt -check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        working-directory: terraform
+        # backend.tf uses use_lockfile = true; bucket comes from a
+        # workflow Variable, region from env.
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="region=${AWS_REGION}"
+
+      - name: terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+      # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes present.
+      # Swallow exit 2 — a destructive plan is exactly what we want to
+      # *show* in the PR comment, not block on. Exit 1 (real error)
+      # still fails the workflow.
+      - name: terraform plan
+        id: plan
+        working-directory: terraform
+        run: |
+          set +e
+          terraform plan -no-color -detailed-exitcode > plan.txt 2>&1
+          ec=$?
+          cat plan.txt
+          echo "$ec" > plan.exitcode
+          if [ "$ec" = "1" ]; then exit 1; fi
+          exit 0
+
+      - name: Post plan to PR
+        if: always() && steps.plan.conclusion != 'skipped'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planPath = 'terraform/plan.txt';
+            const ecPath = 'terraform/plan.exitcode';
+            const plan = fs.existsSync(planPath) ? fs.readFileSync(planPath, 'utf8') : '(no plan output captured)';
+            const ec = fs.existsSync(ecPath) ? fs.readFileSync(ecPath, 'utf8').trim() : 'unknown';
+
+            // PR comments cap at ~65k chars. Truncate aggressively to
+            // leave headroom for the markdown chrome around the fenced
+            // block.
+            const MAX = 55000;
+            const body_plan = plan.length > MAX
+              ? plan.slice(0, MAX) + '\n\n... [output truncated; see workflow log for full plan] ...'
+              : plan;
+
+            const summary = ec === '0'
+              ? 'No changes. Infrastructure matches configuration.'
+              : ec === '2'
+              ? 'Changes detected. Review the plan below carefully before merging — anything tagged `# forces replacement` will destroy and recreate the resource.'
+              : 'Plan failed. See the workflow log.';
+
+            const marker = '<!-- terraform-plan -->';
+            const body = `${marker}\n## Terraform Plan\n\n${summary}\n\n<details><summary>Show plan output</summary>\n\n\`\`\`hcl\n${body_plan}\n\`\`\`\n\n</details>`;
+
+            // Sticky comment: replace any previous plan comment instead
+            // of appending a new one on every push.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

@@ -1,0 +1,49 @@
+name: Release
+
+# Runs semantic-release on every push to main. Analyzes conventional-
+# commit subjects since the last v* tag, picks the next semver bump,
+# writes CHANGELOG.md, creates a GitHub Release with notes, and pushes
+# the version tag.
+#
+# One-time prereq: a manual `v0.0.0` baseline tag must exist on main.
+# Without it semantic-release would default the first release to 1.0.0
+# — the tag pins it to the 0.x range while the project is pre-stable.
+# See README "Releases" section for the one-time tag command.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write       # push CHANGELOG commit + version tag
+  issues: write         # release notes comment on closed issues
+  pull-requests: write  # release notes comment on merged PRs
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # semantic-release walks full git history to find the last
+          # release tag and analyze commits since.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Release
+        env:
+          # Default GITHUB_TOKEN — sufficient because semantic-release
+          # writes only CHANGELOG.md + the tag + the release. Pushes from
+          # GITHUB_TOKEN do not re-trigger workflows, so the chore(release)
+          # commit won't loop back into apply.yml.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

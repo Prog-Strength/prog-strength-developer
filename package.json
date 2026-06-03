@@ -1,0 +1,14 @@
+{
+  "name": "prog-strength-developer",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Autonomous developer for Prog Strength. Versioning/changelog tooling only — no runtime Node code lives here.",
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.0",
+    "@semantic-release/release-notes-generator": "^14.0.0",
+    "semantic-release": "^24.0.0"
+  }
+}
