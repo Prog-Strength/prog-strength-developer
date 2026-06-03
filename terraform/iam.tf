@@ -98,10 +98,19 @@ data "aws_iam_policy_document" "github_actions_trust" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
+    # Allow both main-branch context (push to main, workflow_dispatch
+    # from main) and pull_request events from this repo. The latter is
+    # required for plan.yml to assume the role on PR runs. GitHub does
+    # NOT issue OIDC tokens for pull_request events from forks, so the
+    # pull_request sub claim only ever shows up for same-repo branch
+    # PRs — safe in a private repo with trusted collaborators.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_actions_repo}:ref:refs/heads/main"]
+      values = [
+        "repo:${var.github_actions_repo}:ref:refs/heads/main",
+        "repo:${var.github_actions_repo}:pull_request",
+      ]
     }
   }
 }
