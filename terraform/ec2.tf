@@ -10,9 +10,10 @@ data "aws_ssm_parameter" "al2023_ami" {
 #
 # The Claude prompt template is NOT inlined here — instead userdata
 # clones prog-strength-developer at boot and reads bootstrap/prompt.md.tpl
-# from that working copy. This keeps the rendered userdata under EC2's
-# 16KB user_data limit and means iterating on the prompt doesn't
-# require a launch-template replacement.
+# from that working copy. The rendered script also exceeds EC2's 16 KB
+# user_data limit, so we feed it through base64gzip() below: cloud-init
+# detects the gzip magic bytes after base64-decode and decompresses
+# transparently before running the script.
 locals {
   userdata = templatefile("${path.module}/../bootstrap/userdata.sh.tpl", {
     aws_region             = var.aws_region
@@ -49,7 +50,7 @@ resource "aws_launch_template" "worker" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = base64encode(local.userdata)
+  user_data = base64gzip(local.userdata)
 
   tag_specifications {
     resource_type = "instance"
