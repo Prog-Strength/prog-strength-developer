@@ -61,11 +61,38 @@ jobs:
         run: terraform apply -auto-approve
 
       - name: Summary
+        # Pass sow_path via env (NOT inline ${{ }}) to keep it out of the
+        # shell command string. The slug derivation here must match the
+        # one in bootstrap/userdata.sh.tpl: basename .md, then non-safe
+        # chars to '_', then trim trailing underscores. Keep both copies
+        # in sync if you change one.
+        env:
+          SOW_PATH: ${{ inputs.sow_path }}
         run: |
           INSTANCE_ID=$(cd terraform && terraform output -raw worker_instance_id)
-          echo "## Worker dispatched" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **SOW:** \`${{ inputs.sow_path }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Instance ID:** \`$INSTANCE_ID\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **CloudWatch:** /aws/ec2/prog-strength-developer/$INSTANCE_ID" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **SSM:** \`aws ssm start-session --target $INSTANCE_ID\`" >> "$GITHUB_STEP_SUMMARY"
+          SOW_SLUG=$(basename "$SOW_PATH" .md | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')
+          PREFIX="$SOW_SLUG/$INSTANCE_ID"
+          LOG_GROUP="/aws/ec2/prog-strength-developer"
+          {
+            echo "## Worker dispatched"
+            echo ""
+            echo "- **SOW:** \`$SOW_PATH\`"
+            echo "- **Instance ID:** \`$INSTANCE_ID\`"
+            echo ""
+            echo "### CloudWatch log streams"
+            echo "- \`$PREFIX/claude\` — Claude's live progress (recommended for watching)"
+            echo "- \`$PREFIX/userdata\` — bootstrap script progress"
+            echo "- \`$PREFIX/cloud-init\` — cloud-init's own output"
+            echo ""
+            echo "### Tail Claude live"
+            echo '```bash'
+            echo "aws logs tail $LOG_GROUP \\"
+            echo "  --log-stream-names $PREFIX/claude \\"
+            echo "  --follow"
+            echo '```'
+            echo ""
+            echo "### SSM into the worker"
+            echo '```bash'
+            echo "aws ssm start-session --target $INSTANCE_ID"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

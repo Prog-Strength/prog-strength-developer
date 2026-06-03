@@ -61,6 +61,16 @@ INSTANCE_ID=$(curl -fsS -H "X-aws-ec2-metadata-token: $(curl -fsS -X PUT \
   http://169.254.169.254/latest/meta-data/instance-id)
 export INSTANCE_ID
 
+# Derive a CloudWatch-stream-safe SOW slug from sow_path early so the
+# CW agent config below can name streams after the SOW. basename strips
+# the directory and .md extension; the tr+sed pipeline coerces anything
+# outside [A-Za-z0-9._-] to '_' and trims trailing underscores (the
+# trailing newline from basename becomes '_' under tr -c, hence the
+# trim). Done up front so a single value is reused everywhere.
+SOW_SLUG=$(basename "${sow_path}" .md | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')
+STREAM_PREFIX="$SOW_SLUG/$INSTANCE_ID"
+export SOW_SLUG STREAM_PREFIX
+
 # --------------------------------------------------------------------
 # Install dependencies.
 # --------------------------------------------------------------------
@@ -106,10 +116,13 @@ log "Installing Claude Code"
 npm install -g --silent @anthropic-ai/claude-code
 
 # --------------------------------------------------------------------
-# Configure CloudWatch agent to ship /var/log/prog-strength-developer
-# to the developer log group, one stream per instance ID.
+# Configure CloudWatch agent to ship logs to the developer log group
+# under predictable per-source streams: <sow-slug>/<instance-id>/<source>.
+# The console renders the '/' separators as a folder hierarchy, and
+# splitting userdata vs claude vs cloud-init lets operators tail just
+# Claude's progress without the bootstrap noise.
 # --------------------------------------------------------------------
-log "Configuring CloudWatch agent"
+log "Configuring CloudWatch agent (streams under $STREAM_PREFIX/)"
 cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<EOF
 {
   "logs": {
@@ -117,16 +130,22 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<EOF
       "files": {
         "collect_list": [
           {
-            "file_path": "$LOG_DIR/*.log",
+            "file_path": "$LOG_DIR/userdata.log",
             "log_group_name": "${log_group_name}",
-            "log_stream_name": "$INSTANCE_ID",
+            "log_stream_name": "$STREAM_PREFIX/userdata",
             "timestamp_format": "%Y-%m-%dT%H:%M:%SZ",
+            "retention_in_days": -1
+          },
+          {
+            "file_path": "$LOG_DIR/claude.log",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "$STREAM_PREFIX/claude",
             "retention_in_days": -1
           },
           {
             "file_path": "/var/log/cloud-init-output.log",
             "log_group_name": "${log_group_name}",
-            "log_stream_name": "$INSTANCE_ID-cloud-init",
+            "log_stream_name": "$STREAM_PREFIX/cloud-init",
             "retention_in_days": -1
           }
         ]
@@ -327,7 +346,9 @@ log "Cloning prog-strength-developer for prompt template"
 gh repo clone "${github_org}/prog-strength-developer" /opt/prog-strength-developer-repo
 
 log "Rendering Claude prompt for SOW ${sow_path}"
-SOW_SLUG=$(basename "${sow_path}" .md)
+# SOW_SLUG was computed at the top of the script so it could feed the
+# CloudWatch agent config. Reusing the same value here keeps the prompt
+# substitution and the log stream name in sync.
 sed \
   -e "s|__SOW_PATH__|${sow_path}|g" \
   -e "s|__SOW_SLUG__|$SOW_SLUG|g" \
@@ -350,14 +371,42 @@ sudo -u developer ls -la "$DEV_HOME/.claude/" 2>&1 || true
 
 log "Starting Claude Code (as non-root user 'developer')"
 # --print is non-interactive batch mode.
+# --verbose makes claude stream its intermediate steps (tool calls,
+#   subagent dispatches, file reads/writes) to stdout instead of
+#   buffering everything until the final response. Without it, operators
+#   tailing the log stream see total silence between "Starting Claude
+#   Code" and "Claude exited" — making it impossible to tell hung from
+#   busy.
 # --dangerously-skip-permissions waives the interactive permission
 #   prompts that would otherwise block headless operation. claude
 #   refuses this flag under root, so we drop into the developer user
 #   via sudo for just this command.
 # sudo -i runs as a login shell so $HOME is /home/developer and the
 # default PATH includes the npm-global bin where claude installed.
-sudo -i -u developer -- bash -c "cd $WORKDIR && claude --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
-  | tee "$LOG_DIR/claude.log"
+#
+# `script -qfc` wraps claude in a pseudo-TTY:
+#   -q quiet (no script banner)
+#   -f flush after each write (so the CloudWatch agent picks lines up
+#      promptly instead of waiting for a block buffer to fill)
+#   -c <cmd> run command instead of an interactive shell
+#   /dev/null is the typescript file — we discard the recording; we
+#      only want the live stdout
+# The pty matters because Node.js (which claude is built on) switches
+# stdout to block-buffering when it's not a TTY, defeating any naive
+# tee/redirect approach. A pty also makes claude emit its richer
+# verbose output. We redirect script's stdout+stderr straight to
+# claude.log (no tee — tee would re-introduce the very buffering
+# layer we're trying to avoid; the CloudWatch agent tails the file
+# directly).
+# NO_COLOR=1 suppresses ANSI escapes that claude would otherwise emit
+# under a pty — CloudWatch console renders escape codes as visual
+# noise, and `aws logs tail` shows them literally. NO_COLOR is the
+# industry-standard opt-out (https://no-color.org) and claude honors it.
+sudo -i -u developer -- \
+  script -qfc \
+    "cd $WORKDIR && NO_COLOR=1 claude --print --verbose --dangerously-skip-permissions < $WORKDIR/prompt.md" \
+    /dev/null \
+  > "$LOG_DIR/claude.log" 2>&1
 
 CLAUDE_EXIT=$?
 log "Claude exited with status $CLAUDE_EXIT"
