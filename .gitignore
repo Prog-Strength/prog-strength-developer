@@ -26,3 +26,7 @@ credentials.json
 .vscode/
 .idea/
 *.swp
+
+# Node — semantic-release tooling only; no runtime Node here.
+node_modules/
+npm-debug.log*

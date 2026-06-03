@@ -12,6 +12,12 @@ permissions:
   id-token: write   # for AWS OIDC federation
   contents: read
 
+concurrency:
+  # Shared with apply.yml so SOW dispatches and apply-on-merge
+  # serialize through the same state lock instead of racing.
+  group: terraform-apply-prod
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-2
   TF_VERSION: 1.10.5
