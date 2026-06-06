@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.1.0...v0.2.0) (2026-06-06)
+
+
+### Features
+
+* **prompt:** require a structured template for the docs status-flip PR ([#6](https://github.com/Prog-Strength/prog-strength-developer/issues/6)) ([6d7b797](https://github.com/Prog-Strength/prog-strength-developer/commit/6d7b797969c45a1d29243b41e3e8236a2fbb8ea6))
+
 # [0.1.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.0.0...v0.1.0) (2026-06-03)
 
 
