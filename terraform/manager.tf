@@ -219,3 +219,18 @@ resource "aws_eip" "manager" {
     Name = "prog-strength-developer-manager-eip"
   }
 }
+
+# --------------------------------------------------------------------
+# Stretch goal SG rules: workers push Promtail logs to Loki on :3100.
+# The worker SG's broad egress already permits this; the explicit
+# rule documents intent and survives any future tightening of egress.
+# --------------------------------------------------------------------
+resource "aws_security_group_rule" "manager_ingress_loki" {
+  type                     = "ingress"
+  from_port                = 3100
+  to_port                  = 3100
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.worker.id
+  security_group_id        = aws_security_group.manager.id
+  description              = "Loki push from workers (stretch goal)."
+}

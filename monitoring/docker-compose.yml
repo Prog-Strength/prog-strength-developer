@@ -82,3 +82,17 @@ services:
     restart: unless-stopped
     depends_on:
       - grafana
+
+  # Stretch goal: live Claude log tail. Workers run Promtail and ship
+  # /var/log/prog-strength-developer/claude-pretty.log here. Drop this
+  # service plus the loki Grafana datasource (and free ~200-300MB on
+  # the manager) if memory headroom on t4g.small ever feels tight.
+  loki:
+    image: grafana/loki:3.2.0
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}/monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - /var/lib/manager/loki:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped

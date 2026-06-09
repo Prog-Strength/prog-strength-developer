@@ -133,6 +133,21 @@
       "targets": [
         { "expr": "topk(30, developer_run_duration_seconds)", "format": "table", "instant": true, "refId": "A" }
       ]
+    },
+    {
+      "id": 40,
+      "type": "logs",
+      "title": "Live Claude output",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 38 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" },
+      "targets": [
+        {
+          "expr": "{instance_id=~\"$instance_id\", job=\"claude\"}",
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "Loki" }
+        }
+      ]
     }
   ]
 }

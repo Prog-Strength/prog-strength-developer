@@ -197,6 +197,58 @@ systemctl enable --now node_exporter
 
 log "Installing worker_exporter dependencies"
 pip3 install --quiet 'prometheus_client>=0.20'
+
+# --------------------------------------------------------------------
+# Promtail (stretch goal): tail claude-pretty.log and ship to Loki on
+# the manager so the Grafana "Live Claude output" panel works. Only
+# starts if manager_private_ip is populated — keeps the stretch goal
+# truly optional.
+# --------------------------------------------------------------------
+log "Installing Promtail"
+PROMTAIL_VERSION=3.2.0
+curl -fsSL -o /tmp/promtail.zip \
+  "https://github.com/grafana/loki/releases/download/v$${PROMTAIL_VERSION}/promtail-linux-amd64.zip"
+unzip -q /tmp/promtail.zip -d /tmp
+install -m 0755 /tmp/promtail-linux-amd64 /usr/local/bin/promtail
+mkdir -p /etc/promtail /var/lib/promtail
+cat > /etc/promtail/config.yml <<EOF
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://${manager_private_ip}:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: claude
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: claude
+          instance_id: "$INSTANCE_ID"
+          sow: "${sow_path}"
+          __path__: /var/log/prog-strength-developer/claude-pretty.log
+EOF
+cat > /etc/systemd/system/promtail.service <<'EOF'
+[Unit]
+Description=Promtail (Loki shipper)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+if [ -n "${manager_private_ip}" ]; then
+  systemctl enable --now promtail
+else
+  log "Promtail not started — manager_private_ip empty (stretch goal off)"
+fi
 # Unquoted heredoc so $INSTANCE_ID, $STARTED_AT, and ${sow_path} expand
 # at write time. The exporter script itself is installed after the
 # prog-strength-developer repo clone further down.
