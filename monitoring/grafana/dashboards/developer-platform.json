@@ -1,0 +1,138 @@
+{
+  "title": "Developer Platform",
+  "uid": "developer-platform",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["developer-platform", "fleet"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "instance_id",
+        "type": "query",
+        "datasource": "Prometheus",
+        "refresh": 2,
+        "query": "label_values(developer_worker_info, instance_id)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active workers",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "count(developer_worker_info)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Workers started (24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "count(count_over_time(developer_worker_info[24h]))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Completed runs (24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "count(developer_run_duration_seconds)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Avg run duration (7d)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "avg_over_time(developer_run_duration_seconds[7d])", "refId": "A" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Running workers",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "valueLabel": "value" } }
+      ],
+      "targets": [
+        { "expr": "developer_worker_info", "format": "table", "instant": true, "refId": "A" }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Worker CPU %",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "targets": [
+        {
+          "expr": "100 - avg by (instance_id) (rate(node_cpu_seconds_total{job=\"developer_worker_node\",mode=\"idle\",instance_id=~\"$instance_id\"}[5m])) * 100",
+          "legendFormat": "{{instance_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Worker memory used %",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "targets": [
+        {
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"developer_worker_node\",instance_id=~\"$instance_id\"} / node_memory_MemTotal_bytes{job=\"developer_worker_node\",instance_id=~\"$instance_id\"})",
+          "legendFormat": "{{instance_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Worker network (rx/tx)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [
+        { "expr": "sum by (instance_id) (rate(node_network_receive_bytes_total{job=\"developer_worker_node\",device!~\"lo|docker.*|veth.*\",instance_id=~\"$instance_id\"}[5m]))", "legendFormat": "rx {{instance_id}}", "refId": "A" },
+        { "expr": "sum by (instance_id) (rate(node_network_transmit_bytes_total{job=\"developer_worker_node\",device!~\"lo|docker.*|veth.*\",instance_id=~\"$instance_id\"}[5m]))", "legendFormat": "tx {{instance_id}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Claude tool calls / min",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum by (tool) (rate(developer_claude_tool_calls_total{instance_id=~\"$instance_id\"}[5m])) * 60",
+          "legendFormat": "{{tool}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "Run history (last 30)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "valueLabel": "value" } }
+      ],
+      "targets": [
+        { "expr": "topk(30, developer_run_duration_seconds)", "format": "table", "instant": true, "refId": "A" }
+      ]
+    }
+  ]
+}
