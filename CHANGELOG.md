@@ -1,3 +1,10 @@
+## [0.4.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.4.1...v0.4.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* **dashboards:** drop noise columns from Running workers table ([8f6e09b](https://github.com/Prog-Strength/prog-strength-developer/commit/8f6e09bd39f1c66f821dd7b0c9b8399f82407534))
+
 ## [0.4.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.4.0...v0.4.1) (2026-06-09)
 
 
