@@ -1,3 +1,10 @@
+## [0.3.3](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.2...v0.3.3) (2026-06-09)
+
+
+### Bug Fixes
+
+* **manager:** pre-create per-service data dirs with container UIDs ([7fbb4dc](https://github.com/Prog-Strength/prog-strength-developer/commit/7fbb4dc8507da3bbe79e4fef0fa228e967a8ca97))
+
 ## [0.3.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.1...v0.3.2) (2026-06-09)
 
 
