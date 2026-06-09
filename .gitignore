@@ -30,3 +30,9 @@ credentials.json
 # Node — semantic-release tooling only; no runtime Node here.
 node_modules/
 npm-debug.log*
+
+# Python build artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

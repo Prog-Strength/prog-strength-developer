@@ -1,0 +1,17 @@
+[project]
+name = "prog-strength-developer"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "prometheus_client>=0.20",
+    "requests>=2.31",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
