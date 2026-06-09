@@ -231,6 +231,32 @@ data "aws_iam_policy_document" "github_actions_inline" {
       "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:prog-strength-developer/*",
     ]
   }
+
+  # deploy-manager.yml uses SSM SendCommand to push compose updates onto
+  # the manager instance. ListCommandInvocations is the only way to
+  # poll a command's status without owning the document.
+  statement {
+    sid = "SSMSendCommandManager"
+    actions = [
+      "ssm:SendCommand",
+      "ssm:ListCommandInvocations",
+      "ssm:GetCommandInvocation",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*",
+      "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*",
+    ]
+  }
+
+  # The manager's IAM role is passed to its EC2 at apply time. Without
+  # PassRole, `terraform apply` fails the moment it tries to launch
+  # the manager.
+  statement {
+    sid       = "PassManagerRole"
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.manager.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions_inline" {
