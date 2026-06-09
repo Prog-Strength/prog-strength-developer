@@ -65,6 +65,19 @@ mkdir -p /var/lib/manager
 mount "$DATA_DEV" /var/lib/manager
 echo "LABEL=manager-data /var/lib/manager ext4 defaults,nofail 0 2" >> /etc/fstab
 
+# Pre-create per-service data dirs with the UID each container runs as.
+# If docker compose auto-creates them on first 'up', they end up root-owned
+# and the non-root containers (grafana=472, prometheus=nobody=65534,
+# loki=10001) crash-loop on 'permission denied' against their bind mount.
+# Pushgateway and Caddy run as root inside their images so their dirs are
+# fine without this. install -d also fixes ownership on existing dirs,
+# so re-running this on a manager that already booted in the broken
+# state recovers without a wipe.
+log "Creating per-service data dirs with container UIDs"
+install -d -o 472   -g 0     /var/lib/manager/grafana
+install -d -o 65534 -g 65534 /var/lib/manager/prometheus
+install -d -o 10001 -g 10001 /var/lib/manager/loki
+
 # --------------------------------------------------------------------
 # Clone prog-strength-developer using a GitHub App installation token.
 # The token-mint pattern mirrors bootstrap/userdata.sh.tpl on the worker
