@@ -260,6 +260,90 @@ data "aws_iam_policy_document" "github_actions_inline" {
     actions   = ["iam:PassRole"]
     resources = [aws_iam_role.manager.arn]
   }
+
+  # IAM lifecycle on the prog-strength-developer-* roles and instance
+  # profiles. Required for Terraform to create the manager role and
+  # profile, and to update the worker's inline policy when its content
+  # changes (e.g. the ec2:SourceInstanceARN self-terminate condition).
+  # The role pattern includes this GHA role itself, so future
+  # github_actions_inline updates can be applied from CI rather than
+  # requiring an admin re-bootstrap. The trust policy already restricts
+  # role assumption to this repo on main / pull_request, so self-PutRolePolicy
+  # is no broader than the existing CI write access to terraform/.
+  statement {
+    sid = "IAMManageStackRoles"
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+    ]
+    resources = [
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/prog-strength-developer-*",
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/prog-strength-developer-*",
+    ]
+  }
+
+  # EC2 resources introduced by manager.tf: the second public subnet,
+  # the manager SG (and the reciprocal worker SG ingress rules), the
+  # data EBS volume, and the EIP. The existing EC2Manage statement
+  # already covers RunInstances / TerminateInstances / launch templates
+  # for workers; this statement layers on the create/modify/delete
+  # actions for the manager's networking and storage. Resources stay
+  # on '*' to match EC2Manage — the developer VPC's isolation plus the
+  # provider's default_tags ("Project = prog-strength-developer") are
+  # the practical scope boundary, since most EC2 networking actions
+  # don't honor resource-ARN conditions cleanly.
+  statement {
+    sid = "EC2ManagerInfra"
+    actions = [
+      # Subnet
+      "ec2:CreateSubnet",
+      "ec2:DeleteSubnet",
+      "ec2:ModifySubnetAttribute",
+      "ec2:AssociateRouteTable",
+      "ec2:DisassociateRouteTable",
+      # Security group
+      "ec2:CreateSecurityGroup",
+      "ec2:DeleteSecurityGroup",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:AuthorizeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:ModifySecurityGroupRules",
+      "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+      "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+      # EBS
+      "ec2:CreateVolume",
+      "ec2:DeleteVolume",
+      "ec2:ModifyVolume",
+      "ec2:AttachVolume",
+      "ec2:DetachVolume",
+      # Elastic IP
+      "ec2:AllocateAddress",
+      "ec2:ReleaseAddress",
+      "ec2:AssociateAddress",
+      "ec2:DisassociateAddress",
+      # Instance lifecycle that aws_volume_attachment may invoke
+      # (stop_instance_before_detaching = true) and that future
+      # in-place manager edits may need.
+      "ec2:StopInstances",
+      "ec2:StartInstances",
+      "ec2:ModifyInstanceAttribute",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions_inline" {
