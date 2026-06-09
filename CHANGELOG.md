@@ -1,3 +1,10 @@
+## [0.4.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.4.0...v0.4.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **dashboards:** render Running workers started_at as a date ([ef5049b](https://github.com/Prog-Strength/prog-strength-developer/commit/ef5049b84e48206120faaebeeba65f88691533f7))
+
 # [0.4.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.3...v0.4.0) (2026-06-09)
 
 
