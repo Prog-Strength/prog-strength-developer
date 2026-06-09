@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.3...v0.4.0) (2026-06-09)
+
+
+### Features
+
+* **dashboards:** warning/critical threshold lines on CPU and memory ([46986bd](https://github.com/Prog-Strength/prog-strength-developer/commit/46986bdefe82abd8bf4c86f115bb4b1c6ad6f056))
+
 ## [0.3.3](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.2...v0.3.3) (2026-06-09)
 
 
