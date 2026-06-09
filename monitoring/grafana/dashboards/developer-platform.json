@@ -87,6 +87,19 @@
               }
             ]
           }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "exported_instance_id": true,
+              "exported_sow": true,
+              "job": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
         }
       ],
       "targets": [
