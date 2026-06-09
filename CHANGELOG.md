@@ -1,3 +1,10 @@
+## [0.3.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.1...v0.3.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* **iam:** worker_inline TerminateSelf - drop unsupported policy variable ([ca61df3](https://github.com/Prog-Strength/prog-strength-developer/commit/ca61df30932ef1f3465d1dd6893a61ab9f27167d)), closes [#7](https://github.com/Prog-Strength/prog-strength-developer/issues/7) [pre-#7](https://github.com/pre-/issues/7)
+
 ## [0.3.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.0...v0.3.1) (2026-06-09)
 
 
