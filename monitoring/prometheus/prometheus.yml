@@ -1,0 +1,75 @@
+# Prometheus scrape config for the prog-strength-developer platform.
+#
+# Three classes of targets:
+#   - Manager self: prometheus self-scrape, node_exporter, cadvisor, pushgateway
+#   - Workers: discovered via ec2_sd_config on the Name tag, scraped on
+#     :9100 (node_exporter) and :9101 (worker_exporter)
+#   - Pushgateway: scraped as a static target with honor_labels so the
+#     per-instance labels pushed by terminating workers survive into the
+#     TSDB without being clobbered.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    deployment: prog-strength-developer
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: manager_node
+    static_configs:
+      - targets: ["node_exporter:9100"]
+
+  - job_name: manager_containers
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
+  # Worker node_exporter — host metrics (CPU, memory, disk, network).
+  - job_name: developer_worker_node
+    ec2_sd_configs:
+      - region: us-east-2
+        port: 9100
+        refresh_interval: 15s
+        filters:
+          - name: tag:Name
+            values: ["prog-strength-developer-worker"]
+          - name: instance-state-name
+            values: ["pending", "running"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_tag_SOW]
+        target_label: sow
+      - source_labels: [__meta_ec2_private_ip]
+        regex: (.*)
+        replacement: $1:9100
+        target_label: __address__
+
+  # Worker worker_exporter — SOW state and Claude activity counters.
+  - job_name: developer_worker_exporter
+    ec2_sd_configs:
+      - region: us-east-2
+        port: 9101
+        refresh_interval: 15s
+        filters:
+          - name: tag:Name
+            values: ["prog-strength-developer-worker"]
+          - name: instance-state-name
+            values: ["pending", "running"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_tag_SOW]
+        target_label: sow
+      - source_labels: [__meta_ec2_private_ip]
+        regex: (.*)
+        replacement: $1:9101
+        target_label: __address__
