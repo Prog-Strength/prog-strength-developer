@@ -63,8 +63,31 @@
       "type": "table",
       "title": "Running workers",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "started_at" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsIso" }
+            ]
+          }
+        ]
+      },
       "transformations": [
-        { "id": "labelsToFields", "options": { "valueLabel": "value" } }
+        { "id": "labelsToFields", "options": { "valueLabel": "value" } },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "started_at",
+                "destinationType": "time",
+                "dateFormat": "X"
+              }
+            ]
+          }
+        }
       ],
       "targets": [
         { "expr": "developer_worker_info", "format": "table", "instant": true, "refId": "A" }
