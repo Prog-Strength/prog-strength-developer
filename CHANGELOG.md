@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.3.0...v0.3.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **iam:** grant GHA role permissions for manager + worker policy update ([3737acf](https://github.com/Prog-Strength/prog-strength-developer/commit/3737acf68d46826a006be02446403639d832f114)), closes [#7](https://github.com/Prog-Strength/prog-strength-developer/issues/7)
+
 # [0.3.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.2.0...v0.3.0) (2026-06-09)
 
 
