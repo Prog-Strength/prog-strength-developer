@@ -199,20 +199,11 @@ values gate both `monitoring.progstrength.fitness` (application) and
 `developers.progstrength.fitness` (developer platform), so one
 password works for both URLs.
 
-Then update `apply.yml` so it passes them through as `TF_VAR_`:
-
-```yaml
-      - name: terraform apply
-        working-directory: terraform
-        env:
-          TF_VAR_grafana_admin_user:     ${{ secrets.GRAFANA_ADMIN_USER }}
-          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-        run: terraform apply -auto-approve
-```
-
-(`plan.yml` can either mirror this or accept the empty default — the
-plan output only references the values in the manager's userdata,
-which is marked `sensitive`.)
+`apply.yml` already picks them up as `TF_VAR_grafana_admin_user` /
+`TF_VAR_grafana_admin_password` from the repo secrets — no workflow
+edit needed. A missing secret resolves to empty string and the manager
+falls through to the compose default of `admin/admin`; setting the
+secrets and re-applying swaps in the real values.
 
 ### 10b. Copy the manager EIP into GoDaddy
 

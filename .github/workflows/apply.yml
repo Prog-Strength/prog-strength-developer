@@ -51,7 +51,18 @@ jobs:
 
       - name: terraform apply
         working-directory: terraform
-        # No TF_VAR_sow_path → aws_instance.worker count stays 0; only
-        # persistent infra is applied here. Workers are launched by
-        # dispatch-sow.yml.
+        # Workers are no longer Terraform-managed (dispatch-sow.yml
+        # launches them via aws ec2 run-instances), so this apply only
+        # touches persistent infra: VPC, IAM, launch template, log
+        # group, secrets, and the developer manager.
+        #
+        # The manager's Grafana admin credentials are sensitive and
+        # come from GitHub repo secrets (mirrored from prog-strength-api
+        # so monitoring.* and developers.* share one password). A
+        # missing secret resolves to empty string here, which matches
+        # the Terraform variable's empty default — so an apply before
+        # the mirror simply ships with the compose default of admin/admin.
+        env:
+          TF_VAR_grafana_admin_user:     ${{ secrets.GRAFANA_ADMIN_USER }}
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: terraform apply -auto-approve
