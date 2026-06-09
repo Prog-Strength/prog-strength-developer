@@ -28,7 +28,7 @@ output "log_group_name" {
   value       = aws_cloudwatch_log_group.worker.name
 }
 
-output "worker_instance_id" {
-  description = "ID of the current worker instance, if one is running. Empty when sow_path is unset."
-  value       = length(aws_instance.worker) > 0 ? aws_instance.worker[0].id : ""
-}
+# worker_instance_id removed: workers are launched directly by the
+# dispatch-sow workflow via aws ec2 run-instances and no longer live in
+# Terraform state. The dispatch workflow's summary surfaces the
+# instance ID it created.
