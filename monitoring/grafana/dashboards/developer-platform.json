@@ -75,7 +75,22 @@
       "type": "timeseries",
       "title": "Worker CPU %",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "dashed" } }
+        }
+      },
       "targets": [
         {
           "expr": "100 - avg by (instance_id) (rate(node_cpu_seconds_total{job=\"developer_worker_node\",mode=\"idle\",instance_id=~\"$instance_id\"}[5m])) * 100",
@@ -89,7 +104,22 @@
       "type": "timeseries",
       "title": "Worker memory used %",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "dashed" } }
+        }
+      },
       "targets": [
         {
           "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"developer_worker_node\",instance_id=~\"$instance_id\"} / node_memory_MemTotal_bytes{job=\"developer_worker_node\",instance_id=~\"$instance_id\"})",

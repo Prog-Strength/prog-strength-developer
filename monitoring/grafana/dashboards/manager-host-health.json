@@ -74,11 +74,26 @@
       "type": "timeseries",
       "title": "CPU % (host)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
-      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "dashed" } }
+        }
+      },
       "targets": [
         {
-          "expr": "avg by (mode) (rate(node_cpu_seconds_total{job=\"manager_node\"}[5m])) * 100",
-          "legendFormat": "{{mode}}",
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{job=\"manager_node\",mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "non-idle",
           "refId": "A"
         }
       ]
@@ -86,13 +101,30 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Memory (host)",
+      "title": "Memory used %",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
-      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "custom": { "thresholdsStyle": { "mode": "dashed" } }
+        }
+      },
       "targets": [
-        { "expr": "node_memory_MemTotal_bytes{job=\"manager_node\"}", "legendFormat": "total", "refId": "A" },
-        { "expr": "node_memory_MemTotal_bytes{job=\"manager_node\"} - node_memory_MemAvailable_bytes{job=\"manager_node\"}", "legendFormat": "used", "refId": "B" },
-        { "expr": "node_memory_Cached_bytes{job=\"manager_node\"}", "legendFormat": "cached", "refId": "C" }
+        {
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"manager_node\"} / node_memory_MemTotal_bytes{job=\"manager_node\"})",
+          "legendFormat": "used",
+          "refId": "A"
+        }
       ]
     },
     {
