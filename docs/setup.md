@@ -184,8 +184,82 @@ Within ~15 minutes you should see a PR open on prog-strength-docs and the
 EC2 instance terminate. Watch progress in CloudWatch
 (`/aws/ec2/prog-strength-developer/<instance-id>`).
 
+## 10. Manager one-time setup (post-first-apply)
+
+The manager (always-on `t4g.small` hosting Grafana / Prometheus /
+Pushgateway / Caddy / Loki) ships with the same Terraform but needs
+three by-hand steps the first time it deploys.
+
+### 10a. Mirror Grafana admin credentials
+
+Copy `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` from
+`Prog-Strength/prog-strength-api`'s repository secrets into
+`Prog-Strength/prog-strength-developer`'s repository secrets. The same
+values gate both `monitoring.progstrength.fitness` (application) and
+`developers.progstrength.fitness` (developer platform), so one
+password works for both URLs.
+
+Then update `apply.yml` so it passes them through as `TF_VAR_`:
+
+```yaml
+      - name: terraform apply
+        working-directory: terraform
+        env:
+          TF_VAR_grafana_admin_user:     ${{ secrets.GRAFANA_ADMIN_USER }}
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: terraform apply -auto-approve
+```
+
+(`plan.yml` can either mirror this or accept the empty default — the
+plan output only references the values in the manager's userdata,
+which is marked `sensitive`.)
+
+### 10b. Copy the manager EIP into GoDaddy
+
+After the first `terraform apply` succeeds, grab the manager's EIP:
+
+```bash
+cd terraform
+terraform output -raw manager_public_ip
+```
+
+Log into GoDaddy, navigate to the `progstrength.fitness` DNS records,
+and add an `A` record:
+
+| Type | Name       | Value                | TTL  |
+|------|------------|----------------------|------|
+| A    | developers | `<EIP from output>`  | 600  |
+
+The EIP is stable across applies, so this is a one-time step. If the
+manager is ever replaced via Terraform, the EIP re-attaches to the
+new instance and no DNS edit is needed.
+
+### 10c. Smoke-test the manager
+
+```bash
+# Find the manager
+MGR=$(aws ec2 describe-instances \
+  --filters Name=tag:Name,Values=prog-strength-developer-manager \
+            Name=instance-state-name,Values=running \
+  --query 'Reservations[].Instances[].InstanceId' --output text)
+aws ssm start-session --target "$MGR"
+
+# In the SSM session:
+docker compose -f /opt/prog-strength-developer/monitoring/docker-compose.yml ps
+docker compose -f /opt/prog-strength-developer/monitoring/docker-compose.yml logs caddy | tail -50
+```
+
+All services should be `running`. Caddy should have provisioned a
+Let's Encrypt cert (look for `certificate obtained successfully`).
+
+Open <https://developers.progstrength.fitness> in a browser, log in
+with the Grafana admin credentials. Both `Developer Platform` and
+`Manager Host Health` dashboards should appear under the `Developer`
+folder.
+
 ## You're done
 
-Subsequent SOWs are dispatched via the same workflow. Re-seed
-`claude-credentials` every few months when the OAuth refresh token expires
-(see `troubleshooting.md`).
+Subsequent SOWs are dispatched via the same workflow and now run in
+parallel up to the workflow-level fleet cap (default 10). Re-seed
+`claude-credentials` every few months when the OAuth refresh token
+expires (see `troubleshooting.md`).

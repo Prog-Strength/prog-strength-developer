@@ -10,9 +10,12 @@ first-time bootstrap.
 
 ## Quick links
 
-- **Dispatch a SOW:** Actions tab → "Dispatch SOW" → Run workflow → paste the SOW path.
-- **Watch a run:** CloudWatch log group `/aws/ec2/prog-strength-developer/<instance-id>`.
+- **Dispatch a SOW:** Actions tab → "Dispatch SOW" → Run workflow → paste the SOW path. Runs in parallel up to a fleet cap of 10.
+- **Live dashboard:** <https://developers.progstrength.fitness/d/developer-platform> — fleet overview, per-worker drill-down, run history, live Claude log tail.
+- **Manager host health:** <https://developers.progstrength.fitness/d/manager-host-health> — CPU/memory/disk/network/per-container metrics for right-sizing the manager itself.
+- **CloudWatch logs:** `/aws/ec2/prog-strength-developer/<instance-id>`.
 - **Debug a stuck worker:** `aws ssm start-session --target <instance-id>`.
+- **SSM into the manager:** `aws ssm start-session --target $(aws ec2 describe-instances --filters Name=tag:Name,Values=prog-strength-developer-manager Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId' --output text)`
 
 ## SOW
 
