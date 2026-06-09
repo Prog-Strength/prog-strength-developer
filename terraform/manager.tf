@@ -38,7 +38,7 @@ resource "aws_security_group" "manager" {
   }
 
   ingress {
-    description = "HTTP for Caddy redirect to HTTPS plus Let's Encrypt HTTP-01."
+    description = "HTTP for Caddy redirect to HTTPS plus Lets Encrypt HTTP-01."
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
