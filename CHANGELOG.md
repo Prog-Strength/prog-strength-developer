@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.2.0...v0.3.0) (2026-06-09)
+
+
+### Features
+
+* developer manager, concurrent workers, dashboards ([#7](https://github.com/Prog-Strength/prog-strength-developer/issues/7)) ([fc6a1a8](https://github.com/Prog-Strength/prog-strength-developer/commit/fc6a1a8618ce397c745bfb753332b9a82449bb76))
+
 # [0.2.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.1.0...v0.2.0) (2026-06-06)
 
 
