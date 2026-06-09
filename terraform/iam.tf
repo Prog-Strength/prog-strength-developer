@@ -39,17 +39,20 @@ data "aws_iam_policy_document" "worker_inline" {
     ]
   }
 
-  # Self-termination only. The Name tag condition restricts the action
-  # to instances bearing the developer-worker tag. The worker cannot
-  # accidentally terminate an instance in prog-strength-infra.
+  # Self-termination only. The ec2:SourceInstanceARN condition compares
+  # the ARN of the calling EC2 against the ARN of the instance being
+  # terminated — so each worker can terminate ONLY itself. The previous
+  # Name-tag condition would have let any worker terminate any other
+  # worker, which becomes a real concern now that concurrent workers
+  # run in the same VPC.
   statement {
     sid       = "TerminateSelf"
     actions   = ["ec2:TerminateInstances"]
     resources = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"]
     condition {
-      test     = "StringEquals"
-      variable = "aws:ResourceTag/Name"
-      values   = ["prog-strength-developer-worker"]
+      test     = "ArnEquals"
+      variable = "ec2:SourceInstanceARN"
+      values   = ["$${aws:ResourceArn}"]
     }
   }
 
@@ -230,6 +233,32 @@ data "aws_iam_policy_document" "github_actions_inline" {
     resources = [
       "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:prog-strength-developer/*",
     ]
+  }
+
+  # deploy-manager.yml uses SSM SendCommand to push compose updates onto
+  # the manager instance. ListCommandInvocations is the only way to
+  # poll a command's status without owning the document.
+  statement {
+    sid = "SSMSendCommandManager"
+    actions = [
+      "ssm:SendCommand",
+      "ssm:ListCommandInvocations",
+      "ssm:GetCommandInvocation",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*",
+      "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*",
+    ]
+  }
+
+  # The manager's IAM role is passed to its EC2 at apply time. Without
+  # PassRole, `terraform apply` fails the moment it tries to launch
+  # the manager.
+  statement {
+    sid       = "PassManagerRole"
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.manager.arn]
   }
 }
 

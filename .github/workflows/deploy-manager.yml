@@ -1,0 +1,86 @@
+name: Deploy manager
+
+# Runs on push to main when the manager's config changes (or on manual
+# dispatch). SSMs into the manager, pulls main, and re-runs
+# `docker compose up -d` to apply the new config. No SSH; no public
+# port 22 on the manager.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "monitoring/**"
+      - "caddy/**"
+      - ".github/workflows/deploy-manager.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Find manager instance ID
+        id: find
+        run: |
+          IID=$(aws ec2 describe-instances \
+            --filters 'Name=tag:Name,Values=prog-strength-developer-manager' \
+                      'Name=instance-state-name,Values=running' \
+            --query 'Reservations[].Instances[].InstanceId' \
+            --output text)
+          if [ -z "$IID" ]; then
+            echo "::error::No running manager instance found. Has terraform apply completed?"
+            exit 1
+          fi
+          echo "instance_id=$IID" >> "$GITHUB_OUTPUT"
+
+      - name: Pull latest and restart compose via SSM
+        env:
+          IID: ${{ steps.find.outputs.instance_id }}
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$IID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy-manager $GITHUB_SHA" \
+            --parameters 'commands=[
+              "set -e",
+              "cd /opt/prog-strength-developer",
+              "git fetch origin main",
+              "git reset --hard origin/main",
+              "cd monitoring",
+              "source /etc/profile.d/manager.sh",
+              "docker compose pull",
+              "docker compose up -d"
+            ]' \
+            --query 'Command.CommandId' --output text)
+          echo "Command ID: $CMD_ID"
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id "$CMD_ID" \
+              --query 'CommandInvocations[0].Status' --output text)
+            if [ "$STATUS" = "Success" ]; then
+              echo "Deploy succeeded."
+              exit 0
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "::error::Deploy command status: $STATUS"
+              aws ssm list-command-invocations --command-id "$CMD_ID" --details
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::Deploy command did not finish within 5 minutes."
+          exit 1

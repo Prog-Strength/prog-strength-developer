@@ -31,7 +31,49 @@ log() { echo "[userdata $(date -u +%FT%TZ)] $*"; }
 # a real function rather than a "command not found" no-op. INSTANCE_ID
 # is fetched lazily inside the function so it works even if the
 # top-of-script IMDS call hasn't succeeded yet.
+finalize_metrics() {
+  # Push end-of-run summary to the manager's Pushgateway so completed-run
+  # facts survive worker termination. Best-effort: a failed push must
+  # not block termination — the worker dies either way.
+  local outcome="$${1:-error}"
+  local mgr="${manager_private_ip}"
+  if [ -z "$mgr" ]; then
+    log "finalize_metrics: no manager_private_ip; skipping push"
+    return 0
+  fi
+  local duration
+  duration=$(( $(date +%s) - $${STARTED_AT:-$(date +%s)} ))
+  local prs_count
+  prs_count=$(cat /var/run/developer-worker/prs_opened 2>/dev/null || echo 0)
+  local sow_label="${sow_path}"
+  # Pushgateway expects bare text exposition. Labels embedded in the
+  # job/instance URL path become target labels on Prometheus's side
+  # because the scrape uses honor_labels.
+  local payload
+  payload=$(cat <<EOF
+# TYPE developer_run_duration_seconds gauge
+developer_run_duration_seconds{sow="$sow_label",outcome="$outcome"} $duration
+# TYPE developer_run_prs_opened gauge
+developer_run_prs_opened{sow="$sow_label",outcome="$outcome"} $prs_count
+EOF
+)
+  if curl -fsS --max-time 10 \
+       -X POST --data-binary "$payload" \
+       "http://$mgr:9091/metrics/job/developer_run/instance/$INSTANCE_ID" \
+       >/dev/null 2>&1; then
+    log "finalize_metrics: pushed (outcome=$outcome, duration=$${duration}s, prs=$prs_count)"
+  else
+    log "finalize_metrics: push to $mgr:9091 failed (continuing)"
+  fi
+  # Brief sleep so Prometheus's next 15s scrape of Pushgateway lands
+  # the new sample before the worker's series goes stale.
+  sleep 2
+}
+
 terminate_self() {
+  local outcome="$${1:-error}"
+  echo terminating > /var/run/developer-worker/state 2>/dev/null || true
+  finalize_metrics "$outcome"
   local iid="$${INSTANCE_ID:-}"
   if [ -z "$iid" ]; then
     local token
@@ -44,7 +86,6 @@ terminate_self() {
     fi
   fi
   log "Terminating instance $iid"
-  # Flush CloudWatch agent buffer before disappearing.
   sleep 10
   if [ -n "$iid" ]; then
     aws ec2 terminate-instances \
@@ -53,13 +94,25 @@ terminate_self() {
   fi
 }
 
-trap 'log "FATAL: userdata exited at line $LINENO with status $?"; terminate_self' ERR
+trap 'log "FATAL: userdata exited at line $LINENO with status $?"; terminate_self error' ERR
 
 INSTANCE_ID=$(curl -fsS -H "X-aws-ec2-metadata-token: $(curl -fsS -X PUT \
   -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' \
   http://169.254.169.254/latest/api/token)" \
   http://169.254.169.254/latest/meta-data/instance-id)
 export INSTANCE_ID
+
+# Boot timestamp used by the Pushgateway finalize push to compute the
+# run's duration. Captured ASAP so a failure in any later stage still
+# attributes a real duration to the run.
+STARTED_AT=$(date +%s)
+export STARTED_AT
+
+# State file consumed by worker_exporter and updated at each lifecycle
+# transition below.
+mkdir -p /var/run/developer-worker
+echo booting > /var/run/developer-worker/state
+echo 0 > /var/run/developer-worker/prs_opened
 
 # Derive a CloudWatch-stream-safe SOW slug from sow_path early so the
 # CW agent config below can name streams after the SOW. basename strips
@@ -114,6 +167,106 @@ export PATH="$HOME/.local/bin:/root/.local/bin:$PATH"
 # Install Claude Code CLI via the official npm package.
 log "Installing Claude Code"
 npm install -g --silent @anthropic-ai/claude-code
+
+# --------------------------------------------------------------------
+# Install node_exporter (host metrics) on :9100 and stub out the
+# worker_exporter systemd unit on :9101. Prometheus on the manager
+# (10.20.2.x) scrapes both via ec2_sd_config using this instance's
+# private IP. The exporter script itself is dropped in further below,
+# after the prog-strength-developer repo has been cloned.
+# --------------------------------------------------------------------
+log "Installing node_exporter"
+NE_VERSION=1.9.1
+curl -fsSL -o /tmp/ne.tgz \
+  "https://github.com/prometheus/node_exporter/releases/download/v$${NE_VERSION}/node_exporter-$${NE_VERSION}.linux-amd64.tar.gz"
+tar -C /tmp -xzf /tmp/ne.tgz
+install -m 0755 "/tmp/node_exporter-$${NE_VERSION}.linux-amd64/node_exporter" /usr/local/bin/node_exporter
+cat > /etc/systemd/system/node_exporter.service <<'EOF'
+[Unit]
+Description=Prometheus node_exporter
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable --now node_exporter
+
+log "Installing worker_exporter dependencies"
+pip3 install --quiet 'prometheus_client>=0.20'
+
+# --------------------------------------------------------------------
+# Promtail (stretch goal): tail claude-pretty.log and ship to Loki on
+# the manager so the Grafana "Live Claude output" panel works. Only
+# starts if manager_private_ip is populated — keeps the stretch goal
+# truly optional.
+# --------------------------------------------------------------------
+log "Installing Promtail"
+PROMTAIL_VERSION=3.2.0
+curl -fsSL -o /tmp/promtail.zip \
+  "https://github.com/grafana/loki/releases/download/v$${PROMTAIL_VERSION}/promtail-linux-amd64.zip"
+unzip -q /tmp/promtail.zip -d /tmp
+install -m 0755 /tmp/promtail-linux-amd64 /usr/local/bin/promtail
+mkdir -p /etc/promtail /var/lib/promtail
+cat > /etc/promtail/config.yml <<EOF
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://${manager_private_ip}:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: claude
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: claude
+          instance_id: "$INSTANCE_ID"
+          sow: "${sow_path}"
+          __path__: /var/log/prog-strength-developer/claude-pretty.log
+EOF
+cat > /etc/systemd/system/promtail.service <<'EOF'
+[Unit]
+Description=Promtail (Loki shipper)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+if [ -n "${manager_private_ip}" ]; then
+  systemctl enable --now promtail
+else
+  log "Promtail not started — manager_private_ip empty (stretch goal off)"
+fi
+# Unquoted heredoc so $INSTANCE_ID, $STARTED_AT, and ${sow_path} expand
+# at write time. The exporter script itself is installed after the
+# prog-strength-developer repo clone further down.
+cat > /etc/systemd/system/worker_exporter.service <<EOF
+[Unit]
+Description=prog-strength-developer worker exporter
+After=network.target
+
+[Service]
+Environment=SOW_PATH=${sow_path}
+Environment=INSTANCE_ID=$INSTANCE_ID
+Environment=STARTED_AT=$STARTED_AT
+ExecStart=/usr/bin/python3 /usr/local/bin/worker_exporter.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 # --------------------------------------------------------------------
 # Configure CloudWatch agent to ship logs to the developer log group
@@ -290,6 +443,7 @@ systemd-run \
 # Clone prog-strength-docs, parse the SOW frontmatter for the repo
 # list, clone each affected repo.
 # --------------------------------------------------------------------
+echo cloning > /var/run/developer-worker/state
 log "Cloning prog-strength-docs"
 cd "$WORKDIR"
 gh repo clone "${github_org}/prog-strength-docs"
@@ -344,6 +498,12 @@ done
 # --------------------------------------------------------------------
 log "Cloning prog-strength-developer for prompt template"
 gh repo clone "${github_org}/prog-strength-developer" /opt/prog-strength-developer-repo
+
+# Now that the repo is on disk, drop the exporter script into place and
+# start the unit registered earlier. State transitions to 'working'
+# right before we hand off to Claude.
+install -m 0755 /opt/prog-strength-developer-repo/bootstrap/worker_exporter.py /usr/local/bin/worker_exporter.py
+systemctl enable --now worker_exporter
 
 log "Rendering Claude prompt for SOW ${sow_path}"
 # SOW_SLUG was computed at the top of the script so it could feed the
@@ -402,6 +562,7 @@ touch "$LOG_DIR/claude-pretty.log"
 ) &
 echo $! > /run/claude-pretty-renderer.pid
 
+echo working > /var/run/developer-worker/state
 log "Starting Claude Code (as non-root user 'developer')"
 # --print is non-interactive batch mode. --dangerously-skip-permissions
 # waives interactive permission prompts; claude refuses this flag under
@@ -420,6 +581,12 @@ log "Claude exited with status $CLAUDE_EXIT"
 
 # --------------------------------------------------------------------
 # Self-terminate. terminate_self() is also wired to the ERR trap so
-# any earlier failure has already invoked it.
+# any earlier failure has already invoked it. Outcome label feeds the
+# Pushgateway summary so the dashboard's Run history panel can color
+# rows by success vs error.
 # --------------------------------------------------------------------
-terminate_self
+if [ "$CLAUDE_EXIT" -eq 0 ]; then
+  terminate_self success
+else
+  terminate_self error
+fi

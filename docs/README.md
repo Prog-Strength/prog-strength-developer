@@ -23,19 +23,27 @@ Specification: `prog-strength-docs/sows/prog-strength-developer.md`.
 
 1. You write a SOW in `prog-strength-docs/sows/<name>.md` with YAML
    frontmatter listing the affected `repos:`.
-2. You open this repo on GitHub → Actions → "Dispatch SOW" → Run workflow →
-   paste the SOW path (e.g. `sows/foo.md`).
+2. You open this repo on GitHub → Actions → "Dispatch SOW" → Run
+   workflow → paste the SOW path (e.g. `sows/foo.md`). Concurrent
+   dispatches are fine; the soft fleet cap of 10 is the only ceiling.
 3. The workflow:
-   - Pre-flights for a running worker (single-instance concurrency).
    - Assumes the AWS GHA OIDC role.
-   - Runs `terraform apply` with the SOW path templated into the worker's
-     userdata.
-   - Exits. Does NOT wait for the worker.
-4. The EC2 worker boots, installs deps, fetches Claude OAuth credentials
-   and a GitHub App installation token from Secrets Manager, clones the
-   SOW + every repo listed in `repos:`, runs Claude Code, opens PRs in
-   each modified repo, and self-terminates.
-5. You review and merge the resulting PRs at your own pace.
+   - Checks the soft fleet cap against `aws ec2 describe-instances`.
+   - Renders `bootstrap/userdata.sh.tpl` with `sow_path` and the
+     manager's private IP baked in.
+   - Calls `aws ec2 run-instances` against the persistent launch
+     template. Exits. Does NOT wait for the worker.
+4. The EC2 worker boots, installs deps, starts `node_exporter` and
+   `worker_exporter` (visible on the Grafana dashboard within ~30
+   seconds), fetches Claude OAuth credentials and a GitHub App
+   installation token from Secrets Manager, clones the SOW + every
+   repo listed in `repos:`, runs Claude Code, opens PRs in each
+   modified repo, pushes a final-run summary (duration, outcome, PRs
+   opened) to the manager's Pushgateway, and self-terminates.
+5. You watch progress on the Grafana dashboard at
+   <https://developers.progstrength.fitness> — Developer Platform for
+   the fleet view, Manager Host Health for the box itself.
+6. You review and merge the resulting PRs at your own pace.
 
 ## What the worker has access to
 
@@ -52,8 +60,7 @@ reach the prod API/MCP/DB.
 ## What the worker does NOT do
 
 - Merge PRs (you do).
-- Notify on completion (PRs visible in GitHub + CloudWatch are the signal).
-- Run in parallel with another worker (v1 enforces single-instance).
+- Notify on completion (PRs visible in GitHub + the Grafana run history are the signal).
 - Modify repos outside the `repos:` list in the SOW frontmatter.
 
 ## First-time setup

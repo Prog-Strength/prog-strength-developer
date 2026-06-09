@@ -1,0 +1,98 @@
+# Manager stack: Prometheus + Pushgateway + Grafana + Caddy + node_exporter + cAdvisor.
+# Loki is added in Phase 4 (stretch goal).
+#
+# Driven by deploy-manager.yml on push to main. First boot is driven by
+# bootstrap/manager_userdata.sh.tpl.
+#
+# Persistent state lives under /var/lib/manager (the mounted gp3 EBS)
+# so a manager replacement preserves dashboards, TSDB, and Caddy certs.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}/monitoring/prometheus:/etc/prometheus:ro
+      - /var/lib/manager/prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway:v1.10.0
+    volumes:
+      - /var/lib/manager/pushgateway:/data
+    command:
+      - "--persistence.file=/data/pushgateway.dat"
+      - "--persistence.interval=30s"
+    restart: unless-stopped
+
+  node_exporter:
+    image: prom/node-exporter:v1.9.1
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers)($$|/)"
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.2.1
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_DISABLE_INITIAL_ADMIN_PASSWORD_CHANGE=true
+    volumes:
+      - ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - /var/lib/manager/grafana:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  caddy:
+    image: caddy:2.8
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/manager/caddy_data:/data
+      - /var/lib/manager/caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      - grafana
+
+  # Stretch goal: live Claude log tail. Workers run Promtail and ship
+  # /var/log/prog-strength-developer/claude-pretty.log here. Drop this
+  # service plus the loki Grafana datasource (and free ~200-300MB on
+  # the manager) if memory headroom on t4g.small ever feels tight.
+  loki:
+    image: grafana/loki:3.2.0
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}/monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - /var/lib/manager/loki:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped

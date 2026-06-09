@@ -1,0 +1,184 @@
+{
+  "title": "Manager Host Health",
+  "uid": "manager-host-health",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["developer-platform", "manager"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Memory used %",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"manager_node\"} / node_memory_MemTotal_bytes{job=\"manager_node\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Load avg (5m)",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "node_load5{job=\"manager_node\"}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Free disk %: root",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "targets": [
+        {
+          "expr": "100 * node_filesystem_avail_bytes{job=\"manager_node\",mountpoint=\"/rootfs\"} / node_filesystem_size_bytes{job=\"manager_node\",mountpoint=\"/rootfs\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Free disk %: /var/lib/manager",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "targets": [
+        {
+          "expr": "100 * node_filesystem_avail_bytes{job=\"manager_node\",mountpoint=\"/rootfs/var/lib/manager\"} / node_filesystem_size_bytes{job=\"manager_node\",mountpoint=\"/rootfs/var/lib/manager\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "CPU % (host)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "targets": [
+        {
+          "expr": "avg by (mode) (rate(node_cpu_seconds_total{job=\"manager_node\"}[5m])) * 100",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Memory (host)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes{job=\"manager_node\"}", "legendFormat": "total", "refId": "A" },
+        { "expr": "node_memory_MemTotal_bytes{job=\"manager_node\"} - node_memory_MemAvailable_bytes{job=\"manager_node\"}", "legendFormat": "used", "refId": "B" },
+        { "expr": "node_memory_Cached_bytes{job=\"manager_node\"}", "legendFormat": "cached", "refId": "C" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Network bytes/s",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{job=\"manager_node\",device!~\"lo|docker.*|veth.*\"}[5m])", "legendFormat": "rx {{device}}", "refId": "A" },
+        { "expr": "rate(node_network_transmit_bytes_total{job=\"manager_node\",device!~\"lo|docker.*|veth.*\"}[5m])", "legendFormat": "tx {{device}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Load averages",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        { "expr": "node_load1{job=\"manager_node\"}", "legendFormat": "1m", "refId": "A" },
+        { "expr": "node_load5{job=\"manager_node\"}", "legendFormat": "5m", "refId": "B" },
+        { "expr": "node_load15{job=\"manager_node\"}", "legendFormat": "15m", "refId": "C" }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "/var/lib/manager usage",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "node_filesystem_size_bytes{job=\"manager_node\",mountpoint=\"/rootfs/var/lib/manager\"}", "legendFormat": "capacity", "refId": "A" },
+        { "expr": "node_filesystem_size_bytes{job=\"manager_node\",mountpoint=\"/rootfs/var/lib/manager\"} - node_filesystem_avail_bytes{job=\"manager_node\",mountpoint=\"/rootfs/var/lib/manager\"}", "legendFormat": "used", "refId": "B" }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Prometheus TSDB on-disk size",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "prometheus_tsdb_storage_blocks_bytes", "refId": "A" }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Per-container CPU",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{job=\"manager_containers\",name!=\"\"}[5m])) * 100",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Per-container memory",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{job=\"manager_containers\",name!=\"\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "table",
+      "title": "Container restart counts",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+      "targets": [
+        {
+          "expr": "container_start_time_seconds{job=\"manager_containers\",name!=\"\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -394,3 +394,65 @@ tool input/output, subagent sidechain calls), SSM into a still-running
 worker and read the source JSONL directly at
 `/home/developer/.claude/projects/*/*.jsonl` — the rendered stream
 truncates tool-result content at 300 chars; the source has everything.
+
+## "No workers showing on the Grafana fleet panel"
+
+The Developer Platform dashboard's "Active workers" stat reads zero
+when no `developer_worker_info` series are alive in Prometheus. Walk
+the layers in order:
+
+1. **Is a worker actually running?**
+   `aws ec2 describe-instances --filters
+   Name=tag:Name,Values=prog-strength-developer-worker
+   Name=instance-state-name,Values=running`.
+2. **Is Prometheus discovering it?** SSH-tunnel or SSM-port-forward to
+   `developers.progstrength.fitness/d/manager-host-health` (or use the
+   `/d/manager-host-health` URL). Open Prometheus → Status → Targets.
+   The `developer_worker_node` and `developer_worker_exporter` jobs
+   should list the worker's private IP. If they don't, the manager's
+   IAM role may be missing `ec2:DescribeInstances` (see `manager.tf`).
+3. **Are the exporters up on the worker?** SSM into the worker:
+   `systemctl status worker_exporter node_exporter`. If either is
+   inactive, `journalctl -u worker_exporter -e` is the next step.
+4. **Is the SG path open?** From the manager:
+   `curl http://<worker-private-ip>:9101/metrics`. A timeout means
+   the manager → worker ingress rule on port 9101 (see
+   `manager.tf`'s `worker_ingress_worker_exporter`) was lost or
+   never applied.
+
+## "Pushgateway target down in Prometheus"
+
+The `pushgateway` job on Prometheus → Status → Targets is unreachable.
+
+1. **Is the container running?** SSM into the manager and run
+   `docker compose -f /opt/prog-strength-developer/monitoring/docker-compose.yml ps`.
+   `docker compose up -d pushgateway` from the same directory restarts
+   it if needed.
+2. **Is the persistence file readable?** `docker compose logs
+   pushgateway`. A corrupt `/var/lib/manager/pushgateway/pushgateway.dat`
+   after an unclean stop manifests as Pushgateway exiting on boot.
+   The file is not authoritative — workers re-push on every termination
+   — so deleting it and restarting is safe.
+3. **Did the most recent worker actually push?** `journalctl -u
+   cloud-init-output.service -e` on a recently-terminated worker (via
+   the CloudWatch `userdata` stream) shows the `finalize_metrics:
+   pushed` line on success or `push to <ip>:9091 failed` on failure.
+
+## "Live Claude output panel shows 'no data'" (stretch goal)
+
+Loki is the stretch-goal log-tail. If the panel is dead:
+
+1. **Is Promtail running on the worker?** SSM in and
+   `systemctl status promtail`. If it never started, the
+   `manager_private_ip` substitution at userdata render time was
+   probably empty — verify the dispatch workflow's `Resolve persistent
+   infra IDs` step found a manager.
+2. **Is Loki up?** SSM the manager and `docker compose ps`. Loki at
+   ~200-300MB resident is the most likely candidate to be evicted if
+   the manager runs out of memory; the Manager Host Health "Per-
+   container memory" panel shows it.
+3. **Did Promtail reach Loki?** From the worker:
+   `curl -fsS http://<manager-private-ip>:3100/ready`. 200 = Loki
+   alive and listening. Connection refused = the manager SG's
+   port-3100 ingress from worker SG (see `manager.tf`'s
+   `manager_ingress_loki`) was lost.

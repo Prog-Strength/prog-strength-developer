@@ -9,25 +9,26 @@ on:
         type: string
 
 permissions:
-  id-token: write   # for AWS OIDC federation
+  id-token: write
   contents: read
 
-concurrency:
-  # Shared with apply.yml so SOW dispatches and apply-on-merge
-  # serialize through the same state lock instead of racing.
-  group: terraform-apply-prod
-  cancel-in-progress: false
+# NO concurrency group. Concurrent dispatches are the entire point of
+# this revision — the manager + per-instance metrics make running
+# multiple workers in parallel safe and observable. The soft fleet cap
+# below is the budget guardrail; the SG/IAM/dashboard story is the
+# correctness guardrail.
 
 env:
   AWS_REGION: us-east-2
-  TF_VERSION: 1.10.5
-  # Set in repo Variables (not Secrets — non-sensitive).
-  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  # Soft fleet cap. Raise via a one-line PR if you genuinely need more
+  # concurrent workers; the value is here so a runaway dispatch loop
+  # fails loudly before it burns dollars.
+  FLEET_CAP: 10
 
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15   # workflow runs Terraform then exits; never long
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -37,68 +38,114 @@ jobs:
           role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Preflight — no in-flight worker
-        run: ./scripts/preflight.sh
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform init
-        working-directory: terraform
-        # backend.tf uses use_lockfile = true (Terraform 1.10+ S3 native
-        # locking), so no DynamoDB lock table is needed at runtime.
-        # TF_STATE_BUCKET and AWS_REGION are workflow env vars; ${VAR}
-        # is bash variable expansion, NOT a GitHub expression — GH only
-        # interprets ${{ ... }} so a single `$` here is correct.
+      - name: Fleet cap check
         run: |
-          terraform init \
-            -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="region=${AWS_REGION}"
+          COUNT=$(aws ec2 describe-instances \
+            --filters 'Name=tag:Name,Values=prog-strength-developer-worker' \
+                      'Name=instance-state-name,Values=pending,running' \
+            --query 'length(Reservations[].Instances[])' --output text)
+          echo "Active workers: $COUNT (cap: $FLEET_CAP)"
+          if [ "$COUNT" -ge "$FLEET_CAP" ]; then
+            echo "::error::Fleet cap reached ($COUNT >= $FLEET_CAP). Refusing to dispatch."
+            exit 1
+          fi
 
-      - name: Terraform apply
-        working-directory: terraform
-        # Pass sow_path via TF_VAR_ env var rather than a shell-quoted
-        # -var flag to close the command-injection vector that the
-        # inline ${{ inputs.sow_path }} interpolation would otherwise
-        # open. Terraform reads TF_VAR_sow_path automatically.
-        env:
-          TF_VAR_sow_path: ${{ inputs.sow_path }}
-        run: terraform apply -auto-approve
+      - name: Resolve persistent infra IDs
+        id: infra
+        run: |
+          LT_ID=$(aws ec2 describe-launch-templates \
+            --filters 'Name=launch-template-name,Values=prog-strength-developer-worker' \
+            --query 'LaunchTemplates[0].LaunchTemplateId' --output text)
+          if [ -z "$LT_ID" ] || [ "$LT_ID" = "None" ]; then
+            echo "::error::Launch template prog-strength-developer-worker not found. Has terraform apply completed?"
+            exit 1
+          fi
+          MGR_PRIVATE_IP=$(aws ec2 describe-instances \
+            --filters 'Name=tag:Name,Values=prog-strength-developer-manager' \
+                      'Name=instance-state-name,Values=running' \
+            --query 'Reservations[].Instances[].PrivateIpAddress' --output text)
+          if [ -z "$MGR_PRIVATE_IP" ]; then
+            echo "::error::Manager instance not running. Cannot dispatch worker without it (Pushgateway + Promtail target)."
+            exit 1
+          fi
+          echo "launch_template_id=$LT_ID" >> "$GITHUB_OUTPUT"
+          echo "manager_private_ip=$MGR_PRIVATE_IP" >> "$GITHUB_OUTPUT"
 
-      - name: Summary
-        # Pass sow_path via env (NOT inline ${{ }}) to keep it out of the
-        # shell command string. The slug derivation here must match the
-        # one in bootstrap/userdata.sh.tpl: basename .md, then non-safe
-        # chars to '_', then trim trailing underscores. Keep both copies
-        # in sync if you change one.
+      - name: Render userdata
+        id: userdata
         env:
           SOW_PATH: ${{ inputs.sow_path }}
+          MGR_PRIVATE_IP: ${{ steps.infra.outputs.manager_private_ip }}
         run: |
-          INSTANCE_ID=$(cd terraform && terraform output -raw worker_instance_id)
+          # bootstrap/userdata.sh.tpl carries TWO kinds of placeholder:
+          # 1) Terraform's ${name} for runtime values we substitute here
+          # 2) Terraform's $${...} escape for literal ${...} that bash
+          #    must see at runtime (e.g. $${INSTANCE_ID:-})
+          # When templatefile() renders the launch-template's baked
+          # userdata it handles both. Here we substitute by hand, so the
+          # render must:
+          #   a) replace ${name} with workflow inputs
+          #   b) replace literal $${ with $ (the Terraform unescape)
+          python3 - "$GITHUB_OUTPUT" <<'PY'
+          import os, sys, base64, gzip
+          src = open("bootstrap/userdata.sh.tpl").read()
+          subs = {
+              "aws_region": os.environ.get("AWS_REGION", "us-east-2"),
+              "sow_path": os.environ["SOW_PATH"],
+              "github_org": "Prog-Strength",
+              "log_group_name": "/aws/ec2/prog-strength-developer",
+              "max_runtime_hours": "6",
+              "claude_secret_name": "prog-strength-developer/claude-credentials",
+              "github_app_secret_name": "prog-strength-developer/github-app",
+              "manager_private_ip": os.environ["MGR_PRIVATE_IP"],
+          }
+          for k, v in subs.items():
+              src = src.replace("${" + k + "}", v)
+          # Terraform's $${ escape -> literal ${ that bash should see.
+          src = src.replace("$${", "${")
+          encoded = base64.b64encode(gzip.compress(src.encode())).decode()
+          with open(sys.argv[1], "a") as f:
+              f.write(f"user_data_b64={encoded}\n")
+          PY
+
+      - name: Run instance
+        id: run
+        env:
+          LT_ID: ${{ steps.infra.outputs.launch_template_id }}
+          USER_DATA: ${{ steps.userdata.outputs.user_data_b64 }}
+          SOW_PATH: ${{ inputs.sow_path }}
+        run: |
+          IID=$(aws ec2 run-instances \
+            --launch-template "LaunchTemplateId=$LT_ID,Version=\$Latest" \
+            --user-data "$USER_DATA" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=prog-strength-developer-worker},{Key=SOW,Value=$SOW_PATH}]" \
+            --query 'Instances[0].InstanceId' --output text)
+          echo "instance_id=$IID" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          SOW_PATH: ${{ inputs.sow_path }}
+          IID: ${{ steps.run.outputs.instance_id }}
+        run: |
           SOW_SLUG=$(basename "$SOW_PATH" .md | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')
-          PREFIX="$SOW_SLUG/$INSTANCE_ID"
+          PREFIX="$SOW_SLUG/$IID"
           LOG_GROUP="/aws/ec2/prog-strength-developer"
           {
             echo "## Worker dispatched"
             echo ""
             echo "- **SOW:** \`$SOW_PATH\`"
-            echo "- **Instance ID:** \`$INSTANCE_ID\`"
+            echo "- **Instance ID:** \`$IID\`"
+            echo ""
+            echo "### Live dashboard"
+            echo "<https://developers.progstrength.fitness/d/developer-platform>"
             echo ""
             echo "### CloudWatch log streams"
-            echo "- \`$PREFIX/claude\` — Claude's live progress (recommended for watching)"
+            echo "- \`$PREFIX/claude\` — Claude's live progress"
             echo "- \`$PREFIX/userdata\` — bootstrap script progress"
             echo "- \`$PREFIX/cloud-init\` — cloud-init's own output"
             echo ""
-            echo "### Tail Claude live"
-            echo '```bash'
-            echo "aws logs tail $LOG_GROUP \\"
-            echo "  --log-stream-names $PREFIX/claude \\"
-            echo "  --follow"
-            echo '```'
-            echo ""
             echo "### SSM into the worker"
             echo '```bash'
-            echo "aws ssm start-session --target $INSTANCE_ID"
+            echo "aws ssm start-session --target $IID"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

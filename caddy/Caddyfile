@@ -1,0 +1,22 @@
+# HTTPS reverse proxy for the developer manager.
+#
+# Caddy auto-provisions a Let's Encrypt cert for
+# developers.progstrength.fitness on first request. DNS A record for
+# that name lives in GoDaddy (where progstrength.fitness is managed)
+# and points at the manager's Elastic IP (allocated by Terraform —
+# see `terraform output -raw manager_public_ip`). EIP is stable across
+# applies, so the GoDaddy edit is a one-time setup step.
+#
+# (block_internal) follows the application Caddyfile's pattern. Grafana
+# serves a /metrics endpoint for self-scraping; Prometheus already
+# scrapes it over the docker network, so the public path responds 404.
+
+(block_internal) {
+	@internal path /metrics
+	respond @internal 404
+}
+
+developers.progstrength.fitness {
+	import block_internal
+	reverse_proxy grafana:3000
+}

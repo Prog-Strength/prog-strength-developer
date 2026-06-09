@@ -28,7 +28,22 @@ output "log_group_name" {
   value       = aws_cloudwatch_log_group.worker.name
 }
 
-output "worker_instance_id" {
-  description = "ID of the current worker instance, if one is running. Empty when sow_path is unset."
-  value       = length(aws_instance.worker) > 0 ? aws_instance.worker[0].id : ""
+# worker_instance_id removed: workers are launched directly by the
+# dispatch-sow workflow via aws ec2 run-instances and no longer live in
+# Terraform state. The dispatch workflow's summary surfaces the
+# instance ID it created.
+
+output "manager_instance_id" {
+  description = "Instance ID of the permanent developer manager. Use with `aws ssm start-session --target ...` for ops access."
+  value       = aws_instance.manager.id
+}
+
+output "manager_public_ip" {
+  description = "Elastic IP of the developer manager. Paste into GoDaddy as the A record for developers.progstrength.fitness."
+  value       = aws_eip.manager.public_ip
+}
+
+output "manager_security_group_id" {
+  description = "Security group ID for the manager."
+  value       = aws_security_group.manager.id
 }
