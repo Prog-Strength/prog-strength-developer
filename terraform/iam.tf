@@ -39,20 +39,28 @@ data "aws_iam_policy_document" "worker_inline" {
     ]
   }
 
-  # Self-termination only. The ec2:SourceInstanceARN condition compares
-  # the ARN of the calling EC2 against the ARN of the instance being
-  # terminated — so each worker can terminate ONLY itself. The previous
-  # Name-tag condition would have let any worker terminate any other
-  # worker, which becomes a real concern now that concurrent workers
-  # run in the same VPC.
+  # Worker-scoped termination. The condition restricts the action to
+  # instances whose instance profile is the worker profile, so a worker
+  # cannot terminate the manager or any non-worker instance in the
+  # account. Cross-worker termination is theoretically possible — any
+  # worker can terminate any other worker — but the boundary that
+  # actually matters is workers-vs-everything-else, which this enforces.
+  #
+  # The earlier ec2:SourceInstanceARN ArnEquals $${aws:ResourceArn}
+  # attempt at true self-only fails IAM's legacy parser on PutRolePolicy:
+  # ${aws:ResourceArn} is only a substitution variable in the newer
+  # IAM policy parser, and inline role policies are validated against
+  # the legacy one. True self-only needs a launch-time per-worker tag
+  # or a per-worker role, which is more refactor than the threat warrants
+  # given Claude Code is the only thing running on workers.
   statement {
     sid       = "TerminateSelf"
     actions   = ["ec2:TerminateInstances"]
     resources = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"]
     condition {
       test     = "ArnEquals"
-      variable = "ec2:SourceInstanceARN"
-      values   = ["$${aws:ResourceArn}"]
+      variable = "ec2:InstanceProfile"
+      values   = [aws_iam_instance_profile.worker.arn]
     }
   }
 
