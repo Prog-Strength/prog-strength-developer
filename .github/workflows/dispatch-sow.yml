@@ -130,6 +130,7 @@ jobs:
           SOW_SLUG=$(basename "$SOW_PATH" .md | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')
           PREFIX="$SOW_SLUG/$IID"
           LOG_GROUP="/aws/ec2/prog-strength-developer"
+          TAIL_CMD="aws logs tail $LOG_GROUP --region $AWS_REGION --log-stream-names $PREFIX/claude --follow --format short"
           {
             echo "## Worker dispatched"
             echo ""
@@ -144,8 +145,25 @@ jobs:
             echo "- \`$PREFIX/userdata\` — bootstrap script progress"
             echo "- \`$PREFIX/cloud-init\` — cloud-init's own output"
             echo ""
+            echo "### Tail Claude's live output locally"
+            echo "Paste into your terminal to follow this run alongside the dashboard."
+            echo "Requires AWS creds with \`logs:FilterLogEvents\` on \`$LOG_GROUP\`."
+            echo '```bash'
+            echo "$TAIL_CMD"
+            echo '```'
+            echo ""
+            echo "Swap \`$PREFIX/claude\` for \`$PREFIX/userdata\` to follow the bootstrap script,"
+            echo "or pass all three to \`--log-stream-names\` to interleave them."
+            echo ""
             echo "### SSM into the worker"
             echo '```bash'
             echo "aws ssm start-session --target $IID"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # Also surface the tail command in the live job log so the
+          # operator can grab it the moment dispatch finishes without
+          # opening the Summary tab.
+          echo "::group::Tail Claude's live CloudWatch output"
+          echo "$TAIL_CMD"
+          echo "::endgroup::"
