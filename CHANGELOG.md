@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.6.0...v0.6.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* **manager:** pre-create pushgateway data dir with non-root UID ([#11](https://github.com/Prog-Strength/prog-strength-developer/issues/11)) ([c6abfa2](https://github.com/Prog-Strength/prog-strength-developer/commit/c6abfa2fe5e73f7ff3bcd7ebc3b5505aef5e86e9)), closes [#8](https://github.com/Prog-Strength/prog-strength-developer/issues/8)
+
 # [0.6.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.5.0...v0.6.0) (2026-06-10)
 
 
