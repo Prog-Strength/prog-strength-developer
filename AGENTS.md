@@ -107,9 +107,20 @@ A few rules that have come up enough to be worth stating up-front:
 - **TDD applies to the worker_exporter.** That's the only first-class
   application code. Tests in `tests/test_worker_exporter.py`. For
   IaC, "verify" steps are validation commands, not unit tests.
-- **Small, focused commits with conventional messages.** Recent
-  history uses `feat(scope): ...`, `fix(scope): ...`, `docs: ...`,
-  `ci(scope): ...`. Match the pattern.
+- **Every commit AND every PR title must be a Conventional Commit.**
+  Format: `<type>(<scope>): <imperative subject>`. Recent history uses
+  `feat(scope): ...`, `fix(scope): ...`, `docs: ...`, `ci(scope): ...`.
+  Match the pattern. Releases are cut by `semantic-release` on every
+  push to `main`, driven entirely by commit subjects: `feat:` bumps
+  minor, `fix:`/`perf:` bump patch, `!` or `BREAKING CHANGE:` bump
+  major, everything else (`docs`, `ci`, `chore`, `refactor`, `test`)
+  cuts no release. **The PR title is the gotcha**: GitHub's
+  squash-merge button uses the PR title as the merge commit subject,
+  so an unconventional title produces an unconventional commit on
+  `main` no matter how clean the individual commits were — and the
+  release that PR was supposed to ship is lost. The full conventions,
+  including allowed scopes and worked examples, are in `CONTRIBUTING.md`.
+  Read it once.
 - **Don't push directly to main.** Every change flows through a PR;
   plan.yml posts the diff as a sticky comment. Merging triggers
   apply.yml which provisions the change.
