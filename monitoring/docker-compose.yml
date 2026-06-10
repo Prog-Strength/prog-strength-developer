@@ -23,6 +23,12 @@ services:
 
   pushgateway:
     image: prom/pushgateway:v1.10.0
+    # Workers push their end-of-run summary here from a different VPC subnet,
+    # so 9091 must be reachable on the host network — not just inside the
+    # compose network. The manager SG (terraform/manager.tf) restricts
+    # ingress on 9091 to the worker SG, so binding 0.0.0.0:9091 is safe.
+    ports:
+      - "9091:9091"
     volumes:
       - /var/lib/manager/pushgateway:/data
     command:

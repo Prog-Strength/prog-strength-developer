@@ -1,0 +1,20 @@
+{
+  "plugins": [
+    {
+      "name": "superpowers",
+      "marketplace": "superpowers-marketplace",
+      "marketplace_repo": "obra/superpowers-marketplace",
+      "marketplace_sha": "6be22035d873c31ca246db4f4932a1098aea46fc",
+      "version": "5.1.0",
+      "plugin_subdir": ""
+    },
+    {
+      "name": "frontend-design",
+      "marketplace": "claude-plugins-official",
+      "marketplace_repo": "anthropics/claude-plugins-official",
+      "marketplace_sha": "de573bd84695c6657b28f05ffe32c37bb54d1f55",
+      "version": "unknown",
+      "plugin_subdir": "plugins/frontend-design"
+    }
+  ]
+}

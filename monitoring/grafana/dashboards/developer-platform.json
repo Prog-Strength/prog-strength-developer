@@ -45,7 +45,11 @@
       "title": "Completed runs (24h)",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
       "targets": [
-        { "expr": "count(developer_run_duration_seconds)", "refId": "A" }
+        {
+          "expr": "count(developer_run_finished_at_seconds > (time() - 86400)) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
       ]
     },
     {
@@ -55,7 +59,11 @@
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [
-        { "expr": "avg_over_time(developer_run_duration_seconds[7d])", "refId": "A" }
+        {
+          "expr": "avg(developer_run_duration_seconds and (developer_run_finished_at_seconds > (time() - 604800))) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
       ]
     },
     {
@@ -193,11 +201,69 @@
       "type": "table",
       "title": "Run history (last 30)",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "started_at" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsIso" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [
+              { "id": "displayName", "value": "duration" },
+              { "id": "unit", "value": "s" }
+            ]
+          }
+        ]
+      },
       "transformations": [
-        { "id": "labelsToFields", "options": { "valueLabel": "value" } }
+        { "id": "labelsToFields", "options": { "valueLabel": "value" } },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "started_at",
+                "destinationType": "time",
+                "dateFormat": "X"
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "deployment": true,
+              "instance": true,
+              "job": true,
+              "exported_instance_id": true,
+              "exported_sow": true
+            },
+            "indexByName": {
+              "started_at": 0,
+              "sow": 1,
+              "outcome": 2,
+              "Value": 3
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [ { "field": "started_at", "desc": true } ]
+          }
+        },
+        { "id": "limit", "options": { "limitField": 30 } }
       ],
       "targets": [
-        { "expr": "topk(30, developer_run_duration_seconds)", "format": "table", "instant": true, "refId": "A" }
+        { "expr": "developer_run_duration_seconds", "format": "table", "instant": true, "refId": "A" }
       ]
     },
     {
