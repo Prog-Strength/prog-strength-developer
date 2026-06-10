@@ -68,14 +68,18 @@ echo "LABEL=manager-data /var/lib/manager ext4 defaults,nofail 0 2" >> /etc/fsta
 # Pre-create per-service data dirs with the UID each container runs as.
 # If docker compose auto-creates them on first 'up', they end up root-owned
 # and the non-root containers (grafana=472, prometheus=nobody=65534,
-# loki=10001) crash-loop on 'permission denied' against their bind mount.
-# Pushgateway and Caddy run as root inside their images so their dirs are
-# fine without this. install -d also fixes ownership on existing dirs,
-# so re-running this on a manager that already booted in the broken
-# state recovers without a wipe.
+# loki=10001, pushgateway=nobody=65534) crash-loop on 'permission denied'
+# against their bind mount — or in pushgateway's case, run fine but fail
+# to write the persistence file, so every `docker compose up` (each
+# deploy-manager run) silently wipes every previously-pushed run from the
+# Run history / Completed-runs / Failure-rate tiles. Caddy runs as root
+# so its data dirs are fine without this. install -d also fixes ownership
+# on existing dirs, so re-running this on a manager that already booted
+# in the broken state recovers without a wipe.
 log "Creating per-service data dirs with container UIDs"
 install -d -o 472   -g 0     /var/lib/manager/grafana
 install -d -o 65534 -g 65534 /var/lib/manager/prometheus
+install -d -o 65534 -g 65534 /var/lib/manager/pushgateway
 install -d -o 10001 -g 10001 /var/lib/manager/loki
 
 # --------------------------------------------------------------------
