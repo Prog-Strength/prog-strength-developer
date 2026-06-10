@@ -41,27 +41,35 @@ finalize_metrics() {
     log "finalize_metrics: no manager_private_ip; skipping push"
     return 0
   fi
-  local duration
-  duration=$(( $(date +%s) - $${STARTED_AT:-$(date +%s)} ))
+  local finished_at
+  finished_at=$(date +%s)
+  local started_at_label="$${STARTED_AT:-$finished_at}"
+  local duration=$(( finished_at - started_at_label ))
   local prs_count
   prs_count=$(cat /var/run/developer-worker/prs_opened 2>/dev/null || echo 0)
   local sow_label="${sow_path}"
   # Pushgateway expects bare text exposition. Labels embedded in the
   # job/instance URL path become target labels on Prometheus's side
-  # because the scrape uses honor_labels.
+  # because the scrape uses honor_labels. started_at is encoded as a
+  # label (not the metric value) so the Run history dashboard panel
+  # can render each row's boot timestamp and sort by recency; the
+  # companion _finished_at_seconds metric carries the epoch as a value
+  # so "Completed runs (24h)" can filter by (time() - finished_at).
   local payload
   payload=$(cat <<EOF
 # TYPE developer_run_duration_seconds gauge
-developer_run_duration_seconds{sow="$sow_label",outcome="$outcome"} $duration
+developer_run_duration_seconds{sow="$sow_label",outcome="$outcome",started_at="$started_at_label"} $duration
 # TYPE developer_run_prs_opened gauge
-developer_run_prs_opened{sow="$sow_label",outcome="$outcome"} $prs_count
+developer_run_prs_opened{sow="$sow_label",outcome="$outcome",started_at="$started_at_label"} $prs_count
+# TYPE developer_run_finished_at_seconds gauge
+developer_run_finished_at_seconds{sow="$sow_label",outcome="$outcome",started_at="$started_at_label"} $finished_at
 EOF
 )
   if curl -fsS --max-time 10 \
        -X POST --data-binary "$payload" \
        "http://$mgr:9091/metrics/job/developer_run/instance/$INSTANCE_ID" \
        >/dev/null 2>&1; then
-    log "finalize_metrics: pushed (outcome=$outcome, duration=$${duration}s, prs=$prs_count)"
+    log "finalize_metrics: pushed (outcome=$outcome, started_at=$started_at_label, duration=$${duration}s, prs=$prs_count)"
   else
     log "finalize_metrics: push to $mgr:9091 failed (continuing)"
   fi
