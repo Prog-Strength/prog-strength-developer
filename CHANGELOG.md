@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.5.0...v0.6.0) (2026-06-10)
+
+
+### Features
+
+* **observability:** ship Claude SDK debug logs and surface failure rate ([#10](https://github.com/Prog-Strength/prog-strength-developer/issues/10)) ([999fd9e](https://github.com/Prog-Strength/prog-strength-developer/commit/999fd9e64d0e2598028f4e0e724d793ab3983379))
+
 # [0.5.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.4.2...v0.5.0) (2026-06-10)
 
 
