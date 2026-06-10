@@ -65,6 +65,7 @@ jobs:
               "source /etc/profile.d/manager.sh",
               "install -d -o 472 -g 0 /var/lib/manager/grafana",
               "install -d -o 65534 -g 65534 /var/lib/manager/prometheus",
+              "install -d -o 65534 -g 65534 /var/lib/manager/pushgateway",
               "install -d -o 10001 -g 10001 /var/lib/manager/loki",
               "docker compose pull",
               "docker compose up -d"
