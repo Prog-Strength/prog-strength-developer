@@ -304,6 +304,12 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<EOF
             "retention_in_days": -1
           },
           {
+            "file_path": "$LOG_DIR/claude.log",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "$STREAM_PREFIX/claude-debug",
+            "retention_in_days": -1
+          },
+          {
             "file_path": "/var/log/cloud-init-output.log",
             "log_group_name": "${log_group_name}",
             "log_stream_name": "$STREAM_PREFIX/cloud-init",
@@ -588,12 +594,20 @@ log "Starting Claude Code (as non-root user 'developer')"
 # waives interactive permission prompts; claude refuses this flag under
 # root, so we drop into developer via sudo. sudo -i runs a login shell
 # so $HOME is /home/developer and PATH includes the npm-global bin
-# where claude installed. claude.log here captures the final --print
-# response and any stderr — kept local for SSM debugging, not shipped
-# to CW; the live readable view comes from claude-pretty.log via the
-# renderer sidecar above.
+# where claude installed.
+#
+# ANTHROPIC_LOG=debug turns on the Anthropic TS SDK's verbose fetch
+# diagnostics — written to stderr, captured here into claude.log along
+# with the final --print response. The CW agent ships claude.log to the
+# "claude-debug" stream so SDK-level errors (e.g. "socket connection
+# closed unexpectedly, pass verbose: true...") have their diagnostics
+# already available next time a run fails, with no need to reproduce.
+# Must be set *inside* the developer login shell — `sudo -i` scrubs
+# the parent env. The live human-readable view of the conversation
+# remains in claude-pretty.log via the renderer sidecar above
+# (CW stream "claude").
 sudo -i -u developer -- \
-  bash -c "cd $WORKDIR && claude --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
+  bash -c "cd $WORKDIR && ANTHROPIC_LOG=debug claude --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
   > "$LOG_DIR/claude.log" 2>&1
 
 CLAUDE_EXIT=$?
