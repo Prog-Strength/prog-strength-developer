@@ -530,6 +530,18 @@ sed \
 # branches/files it produces.
 chown -R developer:developer "$WORKDIR"
 
+# Stage Claude Code plugins (superpowers, frontend-design) for the
+# developer user so the prompt's references to superpowers:writing-plans
+# and superpowers:subagent-driven-development resolve. Best-effort: a
+# failure here logs a warning but does not block the run — claude
+# falls back to no-skill behavior, which is strictly worse but still
+# a valid run.
+log "Installing Claude Code plugins (superpowers, frontend-design)"
+sudo -u developer python3 \
+  /opt/prog-strength-developer-repo/bootstrap/install_plugins.py \
+  /opt/prog-strength-developer-repo/bootstrap/plugins.json \
+  || log "WARN: plugin install errored; claude will run without skills"
+
 # Diagnostic: confirm developer's claude credentials are in place
 # before invoking claude. A missing file here means the OAuth blob
 # never reached the worker, which is a one-line failure mode worth
