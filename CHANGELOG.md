@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.4.2...v0.5.0) (2026-06-10)
+
+
+### Features
+
+* **docs:** require Conventional Commits on PRs to drive semantic-release ([#9](https://github.com/Prog-Strength/prog-strength-developer/issues/9)) ([910d69d](https://github.com/Prog-Strength/prog-strength-developer/commit/910d69ddd7e23e917d104476cafac89780c72816)), closes [#8](https://github.com/Prog-Strength/prog-strength-developer/issues/8)
+
 ## [0.4.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.4.1...v0.4.2) (2026-06-09)
 
 
