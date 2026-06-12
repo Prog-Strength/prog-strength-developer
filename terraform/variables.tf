@@ -40,12 +40,6 @@ variable "github_org" {
   default     = "Prog-Strength"
 }
 
-variable "github_actions_repo" {
-  description = "The repo whose Actions workflow is allowed to assume the GHA OIDC role. Restricts the trust policy."
-  type        = string
-  default     = "Prog-Strength/prog-strength-developer"
-}
-
 variable "log_retention_days" {
   description = "CloudWatch Logs retention."
   type        = number

@@ -18,11 +18,6 @@ output "worker_role_arn" {
   value       = aws_iam_role.worker.arn
 }
 
-output "github_actions_role_arn" {
-  description = "IAM role the GitHub Actions workflow assumes via OIDC. Paste into the workflow YAML."
-  value       = aws_iam_role.github_actions.arn
-}
-
 output "log_group_name" {
   description = "CloudWatch log group for worker output."
   value       = aws_cloudwatch_log_group.worker.name
