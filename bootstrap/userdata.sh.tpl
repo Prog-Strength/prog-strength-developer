@@ -65,8 +65,17 @@ developer_run_prs_opened{sow="$sow_label",outcome="$outcome",started_at="$starte
 developer_run_finished_at_seconds{sow="$sow_label",outcome="$outcome",started_at="$started_at_label"} $finished_at
 EOF
 )
-  if curl -fsS --max-time 10 \
-       -X POST --data-binary "$payload" \
+  # Pushgateway parses the body as Prometheus text-exposition format,
+  # which REQUIRES the final metric line to end in a newline. The payload
+  # is built with $(cat <<EOF...), and command substitution strips every
+  # trailing newline — so sending "$payload" directly gives the gateway a
+  # body with no terminating newline and it rejects the WHOLE push with
+  # HTTP 400 ("unexpected end of input stream"). curl -fsS then fails
+  # silently and the run is never recorded, which is why the dashboard's
+  # run-history / completed / failure panels stayed empty. Pipe through
+  # printf '%s\n' to re-add the trailing newline and stream it from stdin.
+  if printf '%s\n' "$payload" | curl -fsS --max-time 10 \
+       -X POST --data-binary @- \
        "http://$mgr:9091/metrics/job/developer_run/instance/$INSTANCE_ID" \
        >/dev/null 2>&1; then
     log "finalize_metrics: pushed (outcome=$outcome, started_at=$started_at_label, duration=$${duration}s, prs=$prs_count)"
