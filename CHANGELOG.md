@@ -1,3 +1,10 @@
+## [0.6.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.6.1...v0.6.2) (2026-06-14)
+
+
+### Bug Fixes
+
+* **observability:** newline-terminate worker run-metric push ([f08561d](https://github.com/Prog-Strength/prog-strength-developer/commit/f08561d0339fe5a2fe1a2ccff737d978efec5563))
+
 ## [0.6.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.6.0...v0.6.1) (2026-06-10)
 
 
