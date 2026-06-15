@@ -32,6 +32,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Python tooling for the `fleet` control-plane package. The dispatch
+      # gate (acquire/attach) is a thin call into it — the locking logic
+      # lives in code, not this workflow.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync fleet dependencies
+        run: uv sync
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -49,6 +58,29 @@ jobs:
             echo "::error::Fleet cap reached ($COUNT >= $FLEET_CAP). Refusing to dispatch."
             exit 1
           fi
+
+      # Per-SOW gate. Acquire the SOW lock BEFORE launching anything, so a
+      # SOW already being built by another worker costs zero compute to
+      # refuse. Exit code 3 == already in progress (distinct from a real
+      # error); the conditional write in DynamoDB makes this race-free even
+      # if two dispatches fire at once.
+      - name: Acquire SOW lock
+        id: acquire
+        env:
+          SOW_PATH: ${{ inputs.sow_path }}
+        run: |
+          set +e
+          uv run python -m fleet acquire \
+            --sow "$SOW_PATH" \
+            --dispatch-id "$GITHUB_RUN_ID" \
+            --dispatched-by "$GITHUB_ACTOR"
+          code=$?
+          set -e
+          if [ "$code" -eq 3 ]; then
+            echo "::error::A worker is already building '$SOW_PATH'. Refusing to dispatch a duplicate. Use 'fleet release --force' once it finishes if this is wrong."
+            exit 1
+          fi
+          exit "$code"
 
       - name: Resolve persistent infra IDs
         id: infra
@@ -122,6 +154,22 @@ jobs:
             --query 'Instances[0].InstanceId' --output text)
           echo "instance_id=$IID" >> "$GITHUB_OUTPUT"
 
+      # Record the launched instance on the lock this dispatch already
+      # holds. Guarded server-side on dispatch_id, so it only patches our
+      # own reservation. Non-fatal: if it fails, the lock still blocks
+      # duplicates (just without the instance id recorded), and the worker
+      # releases by SOW on finalize.
+      - name: Attach instance to lock
+        continue-on-error: true
+        env:
+          SOW_PATH: ${{ inputs.sow_path }}
+          IID: ${{ steps.run.outputs.instance_id }}
+        run: |
+          uv run python -m fleet attach \
+            --sow "$SOW_PATH" \
+            --dispatch-id "$GITHUB_RUN_ID" \
+            --instance-id "$IID"
+
       - name: Summary
         env:
           SOW_PATH: ${{ inputs.sow_path }}
@@ -167,3 +215,22 @@ jobs:
           echo "::group::Tail Claude's live CloudWatch output"
           echo "$TAIL_CMD"
           echo "::endgroup::"
+
+      # If we acquired the lock but never launched an instance (a later
+      # step failed before run-instances), free the SOW now instead of
+      # waiting for the TTL — otherwise a transient failure would block
+      # re-dispatch for hours. Scoped to run.outcome != 'success' so we
+      # NEVER release a lock whose worker is actually alive: once the
+      # instance is launched, that worker owns the SOW and releases it
+      # itself on finalize.
+      - name: Release lock on failed dispatch
+        if: ${{ failure() && steps.acquire.outcome == 'success' && steps.run.outcome != 'success' }}
+        env:
+          SOW_PATH: ${{ inputs.sow_path }}
+        run: |
+          echo "Dispatch failed before a worker launched; releasing the SOW lock."
+          uv run python -m fleet release \
+            --sow "$SOW_PATH" \
+            --instance-id none \
+            --outcome error \
+            --force

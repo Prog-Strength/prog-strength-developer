@@ -87,10 +87,31 @@ EOF
   sleep 2
 }
 
+# Release this worker's SOW lock in the fleet run registry so the SOW can
+# be dispatched again. Best-effort by design: if the fleet package isn't
+# on disk yet (a failure before the repo clone) or the call errors, the
+# lock's expires_at TTL reclaims the SOW. This is the prompt path; the
+# TTL is the correctness backstop. Every command here is guarded so the
+# ERR trap can call it without re-entering.
+release_sow_lock() {
+  local outcome="$${1:-error}"
+  local repo=/opt/prog-strength-developer-repo
+  if [ ! -d "$repo/fleet" ]; then
+    log "fleet package not present; skipping SOW lock release (TTL will reclaim)"
+    return 0
+  fi
+  log "Releasing SOW lock for ${sow_path} (outcome=$outcome)"
+  AWS_REGION="${aws_region}" PYTHONPATH="$repo" python3 -m fleet release \
+    --sow "${sow_path}" \
+    --instance-id "$${INSTANCE_ID:-none}" \
+    --outcome "$outcome" || log "fleet release errored (TTL will reclaim the lock)"
+}
+
 terminate_self() {
   local outcome="$${1:-error}"
   echo terminating > /var/run/developer-worker/state 2>/dev/null || true
   finalize_metrics "$outcome"
+  release_sow_lock "$outcome"
   local iid="$${INSTANCE_ID:-}"
   if [ -z "$iid" ]; then
     local token
@@ -212,8 +233,10 @@ WantedBy=multi-user.target
 EOF
 systemctl enable --now node_exporter
 
-log "Installing worker_exporter dependencies"
-pip3 install --quiet 'prometheus_client>=0.20'
+log "Installing worker_exporter + fleet dependencies"
+# prometheus_client: worker_exporter metrics. boto3: the `fleet` package's
+# SOW-lock release at finalize (python3 -m fleet release).
+pip3 install --quiet 'prometheus_client>=0.20' 'boto3>=1.34'
 
 # --------------------------------------------------------------------
 # Promtail (stretch goal): tail claude-pretty.log and ship to Loki on
