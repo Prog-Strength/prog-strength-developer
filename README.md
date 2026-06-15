@@ -24,7 +24,30 @@ One VPC, two public subnets, no peering to the application VPC in `prog-strength
 - **Manager host health:** <https://developers.progstrength.fitness/d/manager-host-health> — CPU/memory/disk/network/per-container metrics for right-sizing the manager itself.
 - **CloudWatch logs:** `/aws/ec2/prog-strength-developer/<instance-id>`.
 - **Debug a stuck worker:** `aws ssm start-session --target <instance-id>`.
+- **See / clear SOW locks:** `uv run python -m fleet list` to see what's building; `uv run python -m fleet release --sow sows/<name>.md --instance-id none --outcome error --force` to free a stuck lock (see [Fleet control](#fleet-control)).
 - **SSM into the manager:** `aws ssm start-session --target $(aws ec2 describe-instances --filters Name=tag:Name,Values=prog-strength-developer-manager Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId' --output text)`
+
+## Fleet control
+
+The dispatch pipeline guarantees **at most one active worker per SOW**. Before launching anything, the "Dispatch SOW" workflow acquires a lock on the SOW in a DynamoDB **run registry** (`prog-strength-developer-runs` — one item per SOW path). If a worker is already building that SOW, the dispatch is refused and **no instance is launched**. That stops an accidental double-dispatch (a mis-click, an over-eager re-run of a workflow thought to have failed) from fanning out duplicate workers that race each other into conflicting PRs — and from burning the EC2 + Claude cost of doing so. The worker releases the lock when it finishes; a stale lock (a worker that died without releasing) self-heals via the row's `expires_at` TTL.
+
+The locking logic deliberately does **not** live in the workflow YAML. It is a small, testable Python package — `fleet/` — that the workflow and the worker call as a thin CLI (`python -m fleet …`). The run registry is an interface (`fleet/registry.py`) with a DynamoDB implementation (`fleet/dynamo.py`) and an in-memory one for tests (`fleet/memory.py`), mirroring the application API's repository pattern. **This package is the intended home for future control-plane logic** (worker lifecycle, scheduling, assignment policy) — extend it there, not in the dispatch workflow, which stays a thin caller.
+
+Lifecycle:
+
+- **acquire** — dispatch workflow, before launch. An atomic DynamoDB conditional write, so two simultaneous dispatches cannot both win. Exit code `3` means "already in progress" (distinct from a real error).
+- **attach** — dispatch workflow, after launch. Records the instance id on the lock.
+- **release** — worker, on finalize (the same step that pushes summary metrics to Pushgateway). Frees the SOW. If release is ever missed (a hard crash), the lock's `expires_at` TTL reclaims the SOW — enforced in the acquire condition, not by relying on DynamoDB's best-effort TTL deletion.
+
+Operator commands (need AWS credentials with access to the registry table):
+
+```bash
+# What's building right now?
+uv run python -m fleet list
+
+# Free a stuck SOW lock so it can be re-dispatched.
+uv run python -m fleet release --sow sows/<name>.md --instance-id none --outcome error --force
+```
 
 ## SOW
 

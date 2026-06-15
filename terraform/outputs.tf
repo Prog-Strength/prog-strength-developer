@@ -42,3 +42,13 @@ output "manager_security_group_id" {
   description = "Security group ID for the manager."
   value       = aws_security_group.manager.id
 }
+
+output "runs_table_name" {
+  description = "DynamoDB run-registry table (one lock item per SOW)."
+  value       = aws_dynamodb_table.runs.name
+}
+
+output "runs_table_arn" {
+  description = "ARN of the run-registry table. Grant this to the shared CI role in prog-strength-infra so the dispatch workflow can acquire/attach/list."
+  value       = aws_dynamodb_table.runs.arn
+}

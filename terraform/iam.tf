@@ -74,6 +74,19 @@ data "aws_iam_policy_document" "worker_inline" {
     ]
     resources = ["${aws_cloudwatch_log_group.worker.arn}:*"]
   }
+
+  # Fleet run registry: the worker releases its SOW lock on finalize.
+  # GetItem/UpdateItem cover the release path; acquire/attach happen in
+  # the dispatch workflow under the shared CI role (granted in
+  # prog-strength-infra), not here.
+  statement {
+    sid = "FleetRunRegistryRelease"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem",
+    ]
+    resources = [aws_dynamodb_table.runs.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "worker_inline" {
