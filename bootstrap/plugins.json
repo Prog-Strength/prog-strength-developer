@@ -6,7 +6,9 @@
       "marketplace_repo": "obra/superpowers-marketplace",
       "marketplace_sha": "6be22035d873c31ca246db4f4932a1098aea46fc",
       "version": "5.1.0",
-      "plugin_subdir": ""
+      "plugin_subdir": "",
+      "plugin_repo": "obra/superpowers",
+      "plugin_sha": "6fd4507659784c351abbd2bc264c7162cfd386dc"
     },
     {
       "name": "frontend-design",

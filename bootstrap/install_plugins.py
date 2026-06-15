@@ -50,6 +50,13 @@ class PluginSpec:
     marketplace_sha: str
     version: str
     plugin_subdir: str
+    # When the plugin's content lives in its own repo (the marketplace repo
+    # only holds metadata, e.g. obra/superpowers-marketplace points at
+    # obra/superpowers), set plugin_repo/plugin_sha. The cache is then staged
+    # from this repo instead of the marketplace clone. Empty means the content
+    # is bundled in the marketplace repo (optionally under plugin_subdir).
+    plugin_repo: str = ""
+    plugin_sha: str = ""
 
 
 def parse_manifest(path: Path) -> list[PluginSpec]:
@@ -64,6 +71,8 @@ def parse_manifest(path: Path) -> list[PluginSpec]:
                 marketplace_sha=entry["marketplace_sha"],
                 version=entry["version"],
                 plugin_subdir=entry.get("plugin_subdir", ""),
+                plugin_repo=entry.get("plugin_repo", ""),
+                plugin_sha=entry.get("plugin_sha", ""),
             )
         )
     return out
@@ -75,7 +84,9 @@ def build_installed_plugins_entry(spec: PluginSpec, install_path: Path) -> dict[
         "scope": "user",
         "installPath": str(install_path),
         "version": spec.version,
-        "gitCommitSha": spec.marketplace_sha,
+        # Record the SHA of whatever actually got staged into the cache: the
+        # content repo's SHA when there is one, else the marketplace SHA.
+        "gitCommitSha": spec.plugin_sha or spec.marketplace_sha,
     }
 
 
@@ -94,19 +105,12 @@ def _run_git(args: list[str], cwd: Path | None = None) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
-def _checkout_at_sha(spec: PluginSpec, tmp: Path) -> Path:
-    """Clone marketplace_repo at marketplace_sha into tmp; return clone path."""
-    clone = tmp / spec.marketplace
-    _run_git(
-        [
-            "clone",
-            "--quiet",
-            f"https://github.com/{spec.marketplace_repo}.git",
-            str(clone),
-        ]
-    )
-    _run_git(["checkout", "--quiet", spec.marketplace_sha], cwd=clone)
-    return clone
+def _checkout_at_sha(repo: str, sha: str, dest: Path) -> Path:
+    """Clone `repo` into `dest` and (when given) check out `sha`; return dest."""
+    _run_git(["clone", "--quiet", f"https://github.com/{repo}.git", str(dest)])
+    if sha:
+        _run_git(["checkout", "--quiet", sha], cwd=dest)
+    return dest
 
 
 def _stage_plugin_cache(spec: PluginSpec, clone: Path, plugins_root: Path) -> Path:
@@ -163,8 +167,20 @@ def install_one(spec: PluginSpec, plugins_root: Path) -> None:
     plugins_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        clone = _checkout_at_sha(spec, tmp)
-        cache = _stage_plugin_cache(spec, clone, plugins_root)
+        clone = _checkout_at_sha(
+            spec.marketplace_repo, spec.marketplace_sha, tmp / spec.marketplace
+        )
+        # The plugin's skills may live in a separate repo that the marketplace
+        # only references (metadata-only marketplace). Clone that repo and stage
+        # the cache from it; otherwise the content is bundled in the marketplace
+        # clone (optionally under plugin_subdir).
+        if spec.plugin_repo:
+            content = _checkout_at_sha(
+                spec.plugin_repo, spec.plugin_sha, tmp / f"{spec.name}-content"
+            )
+        else:
+            content = clone
+        cache = _stage_plugin_cache(spec, content, plugins_root)
         mkt = _stage_marketplace_clone(spec, clone, plugins_root)
     _merge_installed_plugins(
         plugins_root,
