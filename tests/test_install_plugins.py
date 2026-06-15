@@ -63,7 +63,25 @@ def test_parse_manifest_defaults_plugin_subdir_to_empty(tmp_path):
         "name": "p", "marketplace": "m", "marketplace_repo": "o/r",
         "marketplace_sha": "s", "version": "v",
     }]}))
-    assert parse_manifest(manifest)[0].plugin_subdir == ""
+    spec = parse_manifest(manifest)[0]
+    assert spec.plugin_subdir == ""
+    # A plugin whose content is bundled in the marketplace repo declares no
+    # separate content repo.
+    assert spec.plugin_repo == ""
+    assert spec.plugin_sha == ""
+
+
+def test_parse_manifest_reads_separate_plugin_repo(tmp_path):
+    manifest = tmp_path / "plugins.json"
+    manifest.write_text(json.dumps({"plugins": [{
+        "name": "superpowers", "marketplace": "superpowers-marketplace",
+        "marketplace_repo": "obra/superpowers-marketplace", "marketplace_sha": "s",
+        "version": "5.1.0", "plugin_subdir": "",
+        "plugin_repo": "obra/superpowers", "plugin_sha": "content-sha",
+    }]}))
+    spec = parse_manifest(manifest)[0]
+    assert spec.plugin_repo == "obra/superpowers"
+    assert spec.plugin_sha == "content-sha"
 
 
 def test_build_installed_plugins_entry_uses_install_path_string():
@@ -167,6 +185,61 @@ def test_install_one_stages_cache_marketplace_and_json(tmp_path):
 
     known = json.loads((plugins_root / "known_marketplaces.json").read_text())
     assert "superpowers-marketplace" in known
+
+
+def test_install_one_with_separate_plugin_repo_stages_content_not_metadata(tmp_path):
+    """When a plugin's content lives in its own repo (the marketplace repo only
+    holds metadata, e.g. obra/superpowers-marketplace -> obra/superpowers), the
+    cache must contain the content repo's skills, not the marketplace metadata."""
+    spec = PluginSpec(
+        name="superpowers",
+        marketplace="superpowers-marketplace",
+        marketplace_repo="obra/superpowers-marketplace",
+        marketplace_sha="mkt-sha",
+        version="5.1.0",
+        plugin_subdir="",
+        plugin_repo="obra/superpowers",
+        plugin_sha="content-sha",
+    )
+
+    def fake(args, cwd=None):
+        if args[:2] == ["clone", "--quiet"]:
+            url, dest = args[-2], Path(args[-1])
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / ".git").mkdir(exist_ok=True)
+            if "superpowers-marketplace" in url:
+                # Metadata-only marketplace repo: no skills.
+                meta = dest / ".claude-plugin" / "marketplace.json"
+                meta.parent.mkdir(parents=True, exist_ok=True)
+                meta.write_text("{}")
+            else:
+                # Real content repo: actual skills.
+                skill = dest / "skills" / "using-superpowers" / "SKILL.md"
+                skill.parent.mkdir(parents=True, exist_ok=True)
+                skill.write_text("real skill")
+            return
+        if args[:2] == ["checkout", "--quiet"]:
+            return
+        raise AssertionError(f"unexpected git call: {args}")
+
+    plugins_root = tmp_path / ".claude" / "plugins"
+    with mock.patch("bootstrap.install_plugins._run_git", side_effect=fake):
+        install_one(spec, plugins_root)
+
+    cache = plugins_root / "cache" / "superpowers-marketplace" / "superpowers" / "5.1.0"
+    # Cache holds real skill content from the content repo...
+    assert (cache / "skills" / "using-superpowers" / "SKILL.md").read_text() == "real skill"
+    # ...and NOT the marketplace metadata.
+    assert not (cache / ".claude-plugin" / "marketplace.json").exists()
+
+    # The marketplace dir still mirrors the metadata clone.
+    mkt = plugins_root / "marketplaces" / "superpowers-marketplace"
+    assert (mkt / ".claude-plugin" / "marketplace.json").exists()
+
+    # installed_plugins records the content repo's pinned SHA.
+    installed = json.loads((plugins_root / "installed_plugins.json").read_text())
+    entry = installed["plugins"]["superpowers@superpowers-marketplace"][0]
+    assert entry["gitCommitSha"] == "content-sha"
 
 
 def test_install_one_with_plugin_subdir_copies_only_subtree(tmp_path):
