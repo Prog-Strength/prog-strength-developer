@@ -22,10 +22,29 @@
   },
   "panels": [
     {
+      "id": 100,
+      "type": "row",
+      "title": "📊 Key Statistics",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 101,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 1 },
+      "options": {
+        "mode": "markdown",
+        "content": "At-a-glance health of the autonomous developer fleet — read these first, then drill into the tables and graphs below.\n\n- **Active workers** — EC2 workers currently registered and running.\n- **Workers started / Completed / Failed runs (24h)** — SOW runs over the last day.\n- **Avg run duration (7d)** — mean wall-clock time a worker spends per SOW.\n- **Failure rate (24h)** — failed ÷ total runs. Green < 5%, yellow 5–20%, red > 20%."
+      }
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Active workers",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
       "targets": [
         { "expr": "count(developer_worker_info)", "refId": "A" }
       ]
@@ -34,7 +53,7 @@
       "id": 2,
       "type": "stat",
       "title": "Workers started (24h)",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 4 },
       "targets": [
         { "expr": "count(count_over_time(developer_worker_info[24h]))", "refId": "A" }
       ]
@@ -43,7 +62,7 @@
       "id": 3,
       "type": "stat",
       "title": "Completed runs (24h)",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 4 },
       "targets": [
         {
           "expr": "count(developer_run_finished_at_seconds > (time() - 86400)) or vector(0)",
@@ -56,7 +75,7 @@
       "id": 4,
       "type": "stat",
       "title": "Avg run duration (7d)",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 4 },
       "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [
         {
@@ -70,7 +89,7 @@
       "id": 5,
       "type": "stat",
       "title": "Failed runs (24h)",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 4 },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -96,7 +115,7 @@
       "id": 6,
       "type": "stat",
       "title": "Failure rate (24h)",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 4 },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
@@ -123,17 +142,36 @@
       ]
     },
     {
+      "id": 110,
+      "type": "row",
+      "title": "🏃 Workers & Run History",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "panels": []
+    },
+    {
+      "id": 111,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 9 },
+      "options": {
+        "mode": "markdown",
+        "content": "These two tables are tightly coupled — read them together. A worker shown in **Running workers** now will move into **Run history** once it finishes.\n\n- **Running workers** — every worker active right now and the SOW it is building (`started_at` = when it began).\n- **Run history (last 30)** — audit log of recent finished runs: `started_at` → `ended_at`, with the computed `duration` (`ended_at − started_at`) and `outcome`.\n\nAll timestamps are shown in your browser's local time."
+      }
+    },
+    {
       "id": 10,
       "type": "table",
       "title": "Running workers",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
       "fieldConfig": {
         "defaults": {},
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "started_at" },
             "properties": [
-              { "id": "unit", "value": "dateTimeAsIso" }
+              { "id": "unit", "value": "dateTimeAsLocal" }
             ]
           }
         ]
@@ -171,10 +209,132 @@
       ]
     },
     {
+      "id": 30,
+      "type": "table",
+      "title": "Run history (last 30)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "started_at" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsLocal" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "ended_at" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsLocal" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [
+              { "id": "displayName", "value": "duration" },
+              { "id": "unit", "value": "s" }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "valueLabel": "value" } },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "started_at",
+                "destinationType": "number"
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "ended_at",
+            "replaceFields": false,
+            "binary": { "left": "started_at", "operator": "+", "right": "Value" }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "started_at",
+                "destinationType": "time",
+                "dateFormat": "X"
+              },
+              {
+                "targetField": "ended_at",
+                "destinationType": "time",
+                "dateFormat": "X"
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "deployment": true,
+              "instance": true,
+              "job": true,
+              "exported_instance_id": true,
+              "exported_sow": true
+            },
+            "indexByName": {
+              "started_at": 0,
+              "ended_at": 1,
+              "sow": 2,
+              "outcome": 3,
+              "Value": 4
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [ { "field": "started_at", "desc": true } ]
+          }
+        },
+        { "id": "limit", "options": { "limitField": 30 } }
+      ],
+      "targets": [
+        { "expr": "developer_run_duration_seconds", "format": "table", "instant": true, "refId": "A" }
+      ]
+    },
+    {
+      "id": 120,
+      "type": "row",
+      "title": "🖥️ Worker Metrics",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "panels": []
+    },
+    {
+      "id": 121,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 31 },
+      "options": {
+        "mode": "markdown",
+        "content": "Host-level resource usage for each worker (node_exporter), filtered by the `instance_id` variable at the top.\n\n- **Worker CPU %** / **memory used %** — saturation per worker. Sustained > 85% (red) means a worker is starved; runs may slow or OOM.\n- **Worker network (rx/tx)** — bytes/sec in and out, useful for spotting large clones, image pulls, or model traffic.\n\nCompare series across `instance_id` to find an outlier worker."
+      }
+    },
+    {
       "id": 20,
       "type": "timeseries",
       "title": "Worker CPU %",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 34 },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
@@ -203,7 +363,7 @@
       "id": 21,
       "type": "timeseries",
       "title": "Worker memory used %",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
@@ -232,7 +392,7 @@
       "id": 22,
       "type": "timeseries",
       "title": "Worker network (rx/tx)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
       "fieldConfig": { "defaults": { "unit": "Bps" } },
       "targets": [
         { "expr": "sum by (instance_id) (rate(node_network_receive_bytes_total{job=\"developer_worker_node\",device!~\"lo|docker.*|veth.*\",instance_id=~\"$instance_id\"}[5m]))", "legendFormat": "rx {{instance_id}}", "refId": "A" },
@@ -240,10 +400,29 @@
       ]
     },
     {
+      "id": 130,
+      "type": "row",
+      "title": "🤖 Claude Code Metrics",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "panels": []
+    },
+    {
+      "id": 131,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 51 },
+      "options": {
+        "mode": "markdown",
+        "content": "Development activity from the Claude Code process driving each worker.\n\n- **Claude tool calls / min** — tool-usage rate broken down by tool (Edit, Bash, Read, …). A proxy for how hard the agent is working and where it spends effort.\n- **Live Claude output** — raw Claude logs streamed across the fleet.\n\n> ⚠️ Logs from all workers are interleaved here and can't yet be filtered to a single SOW's stream — treat it as a fleet-wide tail, not a per-run transcript. Per-stream isolation is a known future improvement."
+      }
+    },
+    {
       "id": 23,
       "type": "timeseries",
       "title": "Claude tool calls / min",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 54 },
       "targets": [
         {
           "expr": "sum by (tool) (rate(developer_claude_tool_calls_total{instance_id=~\"$instance_id\"}[5m])) * 60",
@@ -253,80 +432,10 @@
       ]
     },
     {
-      "id": 30,
-      "type": "table",
-      "title": "Run history (last 30)",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "started_at" },
-            "properties": [
-              { "id": "unit", "value": "dateTimeAsIso" }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Value" },
-            "properties": [
-              { "id": "displayName", "value": "duration" },
-              { "id": "unit", "value": "s" }
-            ]
-          }
-        ]
-      },
-      "transformations": [
-        { "id": "labelsToFields", "options": { "valueLabel": "value" } },
-        {
-          "id": "convertFieldType",
-          "options": {
-            "conversions": [
-              {
-                "targetField": "started_at",
-                "destinationType": "time",
-                "dateFormat": "X"
-              }
-            ]
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "__name__": true,
-              "deployment": true,
-              "instance": true,
-              "job": true,
-              "exported_instance_id": true,
-              "exported_sow": true
-            },
-            "indexByName": {
-              "started_at": 0,
-              "sow": 1,
-              "outcome": 2,
-              "Value": 3
-            },
-            "renameByName": {}
-          }
-        },
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [ { "field": "started_at", "desc": true } ]
-          }
-        },
-        { "id": "limit", "options": { "limitField": 30 } }
-      ],
-      "targets": [
-        { "expr": "developer_run_duration_seconds", "format": "table", "instant": true, "refId": "A" }
-      ]
-    },
-    {
       "id": 40,
       "type": "logs",
       "title": "Live Claude output",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 38 },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 62 },
       "datasource": { "type": "loki", "uid": "Loki" },
       "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" },
       "targets": [
