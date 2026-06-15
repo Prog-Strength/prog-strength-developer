@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.8.0...v0.9.0) (2026-06-15)
+
+
+### Features
+
+* refine Developer Platform worker/run tables ([743a88d](https://github.com/Prog-Strength/prog-strength-developer/commit/743a88d800808fc91f8c724d30d411364e8957e8))
+
 # [0.8.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.7.0...v0.8.0) (2026-06-15)
 
 
