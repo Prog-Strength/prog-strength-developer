@@ -73,6 +73,6 @@ See [`troubleshooting.md`](./troubleshooting.md).
 
 ## Cost
 
-Roughly $0.30 per SOW run (mostly EC2 time on `t3.large`), plus ~$1/month of
+Roughly $0.50 per SOW run (mostly EC2 time on `t3.xlarge`), plus ~$1/month of
 always-on costs (Secrets Manager + log retention). A $50/month AWS budget alarm
 fires before anything anomalous.

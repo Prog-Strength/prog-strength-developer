@@ -3,7 +3,7 @@
 Autonomous developer platform for [Prog Strength](https://github.com/Prog-Strength). Two halves:
 
 - A permanent **manager** (`t4g.small`, Graviton) hosts the observability stack — Prometheus, Grafana, Loki, Pushgateway, Caddy — at [developers.progstrength.fitness](https://developers.progstrength.fitness).
-- Ephemeral **workers** (`t3.large`) spin up on demand, run Claude Code against a designated SOW from [prog-strength-docs](https://github.com/Prog-Strength/prog-strength-docs), open PRs in each affected repo, and self-terminate.
+- Ephemeral **workers** (`t3.xlarge`) spin up on demand, run Claude Code against a designated SOW from [prog-strength-docs](https://github.com/Prog-Strength/prog-strength-docs), open PRs in each affected repo, and self-terminate.
 
 See `docs/README.md` for the full system overview and `docs/setup.md` for first-time bootstrap (including the one-time manager DNS + Grafana credential steps).
 
@@ -13,7 +13,7 @@ One VPC, two public subnets, no peering to the application VPC in `prog-strength
 
 **Manager.** Permanent `t4g.small` arm64 instance in its own subnet. Runs a docker-compose stack: Prometheus + Pushgateway + Grafana + Caddy + Loki + node_exporter + cAdvisor. Holds 15 days of TSDB and 7 days of Loki logs on a 20 GB gp3 data volume mounted at `/var/lib/manager`, so a manager replacement preserves dashboards, metrics, and Caddy certs. Caddy terminates TLS for `developers.progstrength.fitness` and reverse-proxies Grafana; cert is auto-provisioned by Let's Encrypt on first request. A stable Elastic IP keeps DNS the same across instance replacements — the `developers` A record in GoDaddy is a one-time setup step.
 
-**Workers.** Ephemeral `t3.large` x86_64 instances in a separate subnet, no inbound (SSM Session Manager only). Each worker boots `node_exporter` + `worker_exporter` (scraped by the manager via Prometheus `ec2_sd_config`), runs Claude Code in `--print` mode against one SOW, ships its live Claude output to Loki on the manager via Promtail, pushes a final-state run summary to the manager's Pushgateway on `:9091` before terminating.
+**Workers.** Ephemeral `t3.xlarge` x86_64 instances in a separate subnet, no inbound (SSM Session Manager only). Each worker boots `node_exporter` + `worker_exporter` (scraped by the manager via Prometheus `ec2_sd_config`), runs Claude Code in `--print` mode against one SOW, ships its live Claude output to Loki on the manager via Promtail, pushes a final-state run summary to the manager's Pushgateway on `:9091` before terminating.
 
 **Why split.** The worker EC2 is **not** Terraform-managed — the shared `terraform-apply-prod` state lock made concurrent dispatches serialize. Workers are now pure `aws ec2 run-instances` calls against a persistent launch template, so the only ceiling is the soft fleet cap (default 10) in the dispatch workflow.
 

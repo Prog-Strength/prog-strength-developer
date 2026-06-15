@@ -83,7 +83,7 @@ Two classes of compute, one VPC:
   `/var/lib/manager`. Reachable at `https://developers.progstrength.fitness`
   via Caddy.
 
-- **Workers** (ephemeral). `t3.large`, x86_64, AL2023. Launched on
+- **Workers** (ephemeral). `t3.xlarge`, x86_64, AL2023. Launched on
   demand by the dispatch workflow via `aws ec2 run-instances`. The
   worker EC2 itself is **NOT in Terraform** — it used to be, but the
   shared `terraform-apply-prod` state lock made concurrent dispatches

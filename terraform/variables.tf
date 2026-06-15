@@ -23,9 +23,9 @@ variable "availability_zone" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type for the worker. t3.large = 2 vCPU / 8 GB."
+  description = "EC2 instance type for the worker. t3.xlarge = 4 vCPU / 16 GB."
   type        = string
-  default     = "t3.large"
+  default     = "t3.xlarge"
 }
 
 variable "max_runtime_hours" {
