@@ -157,7 +157,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 9 },
       "options": {
         "mode": "markdown",
-        "content": "These two tables are tightly coupled — read them together. A worker shown in **Running workers** now will move into **Run history** once it finishes.\n\n- **Running workers** — every worker active right now and the SOW it is building (`started_at` = when it began).\n- **Run history (last 30)** — audit log of recent finished runs: `started_at` → `ended_at`, with the computed `duration` (`ended_at − started_at`) and `outcome`.\n\nAll timestamps are shown in your browser's local time."
+        "content": "These two tables are tightly coupled — read them together. A worker shown in **Running workers** now will move into **Run history** once it finishes.\n\n- **Running workers** — every worker active right now and the SOW it is building (`Start Time` = when it began, `Elapsed Duration` = how long it has been running).\n- **Run history (last 30)** — audit log of recent finished runs: `Start Time` → `End Time`, with the computed `Duration` (`End Time − Start Time`) and `Status`.\n\nAll timestamps are shown in your browser's local time."
       }
     },
     {
@@ -172,6 +172,12 @@
             "matcher": { "id": "byName", "options": "started_at" },
             "properties": [
               { "id": "unit", "value": "dateTimeAsLocal" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Elapsed Duration" },
+            "properties": [
+              { "id": "unit", "value": "ms" }
             ]
           }
         ]
@@ -191,16 +197,36 @@
           }
         },
         {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "Elapsed Duration",
+            "replaceFields": false,
+            "binary": { "left": "Time", "operator": "-", "right": "started_at" }
+          }
+        },
+        {
           "id": "organize",
           "options": {
             "excludeByName": {
+              "Time": true,
+              "Value": true,
               "__name__": true,
               "exported_instance_id": true,
               "exported_sow": true,
               "job": true
             },
-            "indexByName": {},
-            "renameByName": {}
+            "indexByName": {
+              "instance_id": 0,
+              "sow": 1,
+              "started_at": 2,
+              "Elapsed Duration": 3
+            },
+            "renameByName": {
+              "instance_id": "Instance ID",
+              "sow": "SOW",
+              "started_at": "Start Time"
+            }
           }
         }
       ],
@@ -231,7 +257,7 @@
           {
             "matcher": { "id": "byName", "options": "Value" },
             "properties": [
-              { "id": "displayName", "value": "duration" },
+              { "id": "displayName", "value": "Duration" },
               { "id": "unit", "value": "s" }
             ]
           }
@@ -289,13 +315,18 @@
               "exported_sow": true
             },
             "indexByName": {
-              "started_at": 0,
-              "ended_at": 1,
-              "sow": 2,
-              "outcome": 3,
+              "sow": 0,
+              "outcome": 1,
+              "started_at": 2,
+              "ended_at": 3,
               "Value": 4
             },
-            "renameByName": {}
+            "renameByName": {
+              "sow": "SOW",
+              "outcome": "Status",
+              "started_at": "Start Time",
+              "ended_at": "End Time"
+            }
           }
         },
         {
@@ -422,7 +453,7 @@
       "id": 23,
       "type": "timeseries",
       "title": "Claude tool calls / min",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 54 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 54 },
       "targets": [
         {
           "expr": "sum by (tool) (rate(developer_claude_tool_calls_total{instance_id=~\"$instance_id\"}[5m])) * 60",
