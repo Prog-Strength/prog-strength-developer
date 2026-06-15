@@ -1,3 +1,10 @@
+## [0.9.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.9.0...v0.9.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* stage superpowers skill content from its own repo ([5daee48](https://github.com/Prog-Strength/prog-strength-developer/commit/5daee486eafdb42e3ce7df4d1438ffe5a3bfa8c5))
+
 # [0.9.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.8.0...v0.9.0) (2026-06-15)
 
 
