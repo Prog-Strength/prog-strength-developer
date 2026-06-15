@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.6.2...v0.7.0) (2026-06-15)
+
+
+### Features
+
+* **observability:** add section banners and human-readable run history to Developer Platform ([4da9ad7](https://github.com/Prog-Strength/prog-strength-developer/commit/4da9ad75806697405001e64ffb1bdc376e4a77be))
+
 ## [0.6.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.6.1...v0.6.2) (2026-06-14)
 
 
