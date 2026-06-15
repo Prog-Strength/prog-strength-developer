@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.7.0...v0.8.0) (2026-06-15)
+
+
+### Features
+
+* gate worker dispatch to one active worker per SOW ([1cb3ef7](https://github.com/Prog-Strength/prog-strength-developer/commit/1cb3ef7a8f9563c6a014ec8677bdaf90871a1556))
+
 # [0.7.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.6.2...v0.7.0) (2026-06-15)
 
 
