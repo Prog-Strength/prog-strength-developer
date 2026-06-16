@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.10.0...v0.11.0) (2026-06-16)
+
+
+### Features
+
+* **prompt:** make DX/SOW workers honor design-system.md ([956db6b](https://github.com/Prog-Strength/prog-strength-developer/commit/956db6bb0dd9ec56582b228002f7f9e7220c0539))
+
 # [0.10.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.9.2...v0.10.0) (2026-06-16)
 
 
