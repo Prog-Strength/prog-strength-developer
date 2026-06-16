@@ -1,10 +1,14 @@
-name: Dispatch SOW
+name: Dispatch ticket
 
 on:
   workflow_dispatch:
     inputs:
+      # Input key stays `sow_path` deliberately: this is a hand-invoked
+      # workflow, and renaming the key would break muscle memory and any
+      # saved dispatches for no functional gain. It accepts either work
+      # type — the worker routes on the ticket's `type:` frontmatter.
       sow_path:
-        description: "Path to the SOW within prog-strength-docs (e.g. sows/foo.md)"
+        description: "Path to a SOW (sows/foo.md) or DX (dx/foo.md) ticket within prog-strength-docs"
         required: true
         type: string
 

@@ -6,6 +6,7 @@ dependencies = [
     "prometheus_client>=0.20",
     "requests>=2.31",
     "boto3>=1.34",
+    "pyyaml>=6",
 ]
 
 [dependency-groups]
