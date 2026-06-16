@@ -197,6 +197,18 @@ tar -C /usr/local -xzf /tmp/go.tgz
 export PATH="$PATH:/usr/local/go/bin"
 echo 'export PATH="$PATH:/usr/local/go/bin"' >> /etc/profile.d/go.sh
 
+# Install the pre-commit gate tooling the cloned repos rely on. The Go
+# repos' pre-push hook shells out to `golangci-lint` and `pre-commit`
+# from PATH (language: system hooks), so both must be on the developer
+# user's PATH. golangci-lint is pinned to prog-strength-api's CI release
+# (v2.12.2) so the local gate and CI agree exactly — a different version
+# can pass locally yet fail CI (or vice versa). Installed to
+# /usr/local/bin, which is on every login shell's PATH.
+log "Installing pre-commit gate tooling (pre-commit, golangci-lint v2.12.2)"
+pip3 install --quiet 'pre-commit>=3'
+curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/v2.12.2/install.sh \
+  | sh -s -- -b /usr/local/bin v2.12.2
+
 # Install uv (Python project + tool manager).
 log "Installing uv"
 curl -fsSL https://astral.sh/uv/install.sh | sh
@@ -567,6 +579,36 @@ sed \
 # developer) can read the prompt + cloned repos and write back the
 # branches/files it produces.
 chown -R developer:developer "$WORKDIR"
+
+# Arm the pre-commit PUSH gate in every cloned repo that ships a
+# pre-commit config, as the developer user. Git hooks are per-clone and
+# live in each repo's .git/hooks; they are NOT cloned, so a fresh clone
+# has none — which is why the worker's PRs have been reaching CI
+# un-linted. Installing the pre-push hook makes the repo's pre-push
+# stage (golangci-lint = lint + format, go vet, go mod tidy drift, go
+# test) run on the agent's `git push`, so a branch that would fail CI
+# fails locally FIRST and never becomes a red PR. We arm only pre-push
+# (not the commit stage) to gate exactly what CI gates without
+# per-commit formatter churn. Repos that don't ship a pre-commit config
+# — husky-based repos like prog-strength-web (husky self-arms via
+# `npm install`), or repos with no hook at all — are skipped by the
+# conditional below and instead rely on the agent running CI's checks
+# before pushing (see prompt.md.tpl, step 5). Tools are verified on the
+# developer PATH first; if any is missing we skip arming rather than
+# block every push with a hook that can't run.
+log "Arming pre-commit push gate in cloned repos"
+if sudo -i -u developer -- bash -c 'command -v pre-commit golangci-lint go >/dev/null 2>&1'; then
+  for dir in "$WORKDIR"/*/; do
+    if [ -f "$dir.pre-commit-config.yaml" ] || [ -f "$dir.pre-commit-config.yml" ]; then
+      log "  arming pre-push hook in $dir"
+      if ! sudo -i -u developer -- bash -c "cd '$dir' && pre-commit install --hook-type pre-push"; then
+        log "  WARNING: pre-commit install failed in $dir — local CI gate NOT enforced for this repo"
+      fi
+    fi
+  done
+else
+  log "WARNING: pre-commit/golangci-lint/go not all on developer PATH — skipping hook arming (no local CI gate)"
+fi
 
 # Stage Claude Code plugins (superpowers, frontend-design) for the
 # developer user so the prompt's references to superpowers:writing-plans

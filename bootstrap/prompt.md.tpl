@@ -40,12 +40,26 @@ Follow the standard Prog Strength autonomous workflow:
    `prog-strength-docs` already has commits on `feat/__SOW_SLUG__`
    from step 3, append the status flip to that branch instead of
    starting a new one.
-5. **Open PRs.** After all tasks complete, push each feature branch
-   and run `gh pr create` in each modified repository, always
-   including `prog-strength-docs` (because of step 4). The GitHub App
-   you're authenticated as has push access. For repos other than
-   `prog-strength-docs`, PR titles and bodies should follow the
-   format you'll see in recent merged PRs in those repos.
+5. **Verify locally, then open PRs.** A PR that fails CI costs the
+   operator a manual round-trip, so make CI's checks pass *locally
+   before you push*. For each repo you modified, read its `AGENTS.md`
+   and `CONTRIBUTING.md` and run the gate they describe — for the Go
+   repos that means `golangci-lint` at the CI-pinned version (lint +
+   format), `go vet ./...`, `go mod tidy` with no `go.mod`/`go.sum`
+   drift, and `go test ./...` — and fix anything that fails before
+   pushing. Repos vary in how they enforce this locally: some arm a
+   pre-push hook (pre-commit or husky), some have none — so don't rely
+   on a hook to catch it, running the checks yourself before you push
+   is what's required. Where a repo *does* have a commit/push hook,
+   never bypass it with `--no-verify`, and never add `//nolint`, disable
+   a rule, or skip a test to force the push through; if a check fails,
+   fix the code. Only
+   once the gate is green: push each feature branch and run
+   `gh pr create` in each modified repository, always including
+   `prog-strength-docs` (because of step 4). The GitHub App you're
+   authenticated as has push access. For repos other than
+   `prog-strength-docs`, PR titles and bodies should follow the format
+   you'll see in recent merged PRs in those repos.
 
    **The `prog-strength-docs` PR is the operator's one-action signal
    that the work is complete and ready to ship.** Its body MUST
@@ -163,6 +177,11 @@ Notes on populating the template:
   diff. The owner is the reviewer.
 - Do NOT attempt to merge any PR you open. You don't have permission and
   the owner is the gate.
+- Never bypass the local check gate. Don't use `--no-verify`, don't add
+  `//nolint` directives or silence `gosec`/lint findings, and don't skip
+  or weaken tests to get a push or PR through. If a check fails, the code
+  is what's wrong — fix it. If a hook itself is genuinely broken, say so
+  in the PR body rather than working around it.
 - If you encounter ambiguity in the SOW that genuinely blocks progress,
   open a "draft" PR in `prog-strength-docs` proposing a SOW clarification
   rather than guessing. Exit afterwards.
