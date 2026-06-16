@@ -7,6 +7,27 @@ Autonomous developer platform for [Prog Strength](https://github.com/Prog-Streng
 
 See `docs/README.md` for the full system overview and `docs/setup.md` for first-time bootstrap (including the one-time manager DNS + Grafana credential steps).
 
+## Work types
+
+The platform dispatches two work types. A "work type" is just three things — the ticket schema parsed from frontmatter, the prompt template the worker renders, and the branch/PR/merge contract that prompt enforces. Everything else (the dispatch workflow, the DynamoDB SOW lock, the userdata bootstrap, the dashboards) is type-agnostic plumbing both types reuse unchanged. The type is selected by a `type:` frontmatter field on the ticket (`sow` by default when absent, so every existing SOW keeps working untouched), and the worker **routes on it** in `bootstrap/ticket.py` — choosing the template and substituting the right tokens.
+
+| | **SOW** (`type: sow`, default) | **DX** (`type: dx`) |
+|---|---|---|
+| Shape | Convergent — one spec, one correct implementation | Divergent — N differentiated visual variants of one frontend surface, side by side |
+| Ticket | `sows/<feature>.md` | `dx/<surface>.md` |
+| Prompt | `bootstrap/prompt.md.tpl` | `bootstrap/prompt-dx.md.tpl` (leans on the `frontend-design` skill) |
+| Branch | `feat/<slug>` | throwaway `dx/<surface>` |
+| Outcome | PRs that **merge** after review | a **draft `[DX — DO NOT MERGE]`** PR that is the selection artifact and **never merges** |
+| "Done" signal | the `prog-strength-docs` status-flip PR is the operator's ready-to-ship signal | the human picks a variant at the selection gate, closes the PR, and writes a SOW to build the winner |
+
+A DX produces a single comparison route (`/design-explore/<surface>`, behind a feature flag) rendering one disposable variant per enumerated idiom, so the output is a forced spread rather than N near-duplicates. It is dispatched exactly like a SOW — same "Dispatch ticket" workflow, same fleet lock, same dashboards — by pointing it at a `dx/<surface>.md` ticket. The selected variant then feeds a normal SOW that implements it production-quality, so the divergent exploration converges back into the convergent pipeline.
+
+**Boot-time DX validation.** `bootstrap/ticket.py` validates a `type: dx` ticket before Claude runs: `surface` present, `references` non-empty, and `idioms` enumerated with `len(idioms) >= variant_count`. Without enumerated idioms the variants collapse into near-duplicates, so a malformed DX fails fast at boot with a clear message instead of after a wasted six-hour run.
+
+**v1 is web-only.** DX targets `prog-strength-web` (Next.js) surfaces because the draft-PR handoff relies on the per-PR **preview deploy** to render the comparison. `prog-strength-mobile` (TestFlight, no per-PR web preview) needs a different handoff and is a noted future extension.
+
+A convergent counterpart that harvests recurring decisions out of completed DXs into a durable design system (`design-system.md` + tokens) — a **DS (Design System)** work type — is deliberately deferred: there is nothing to harvest until several DXs have run, and a DS update may turn out to be just a normal SOW. See the DX SOW for the seam.
+
 ## Architecture
 
 One VPC, two public subnets, no peering to the application VPC in `prog-strength-infra` — a misbehaving worker cannot reach prod.
@@ -19,7 +40,7 @@ One VPC, two public subnets, no peering to the application VPC in `prog-strength
 
 ## Quick links
 
-- **Dispatch a SOW:** Actions tab → "Dispatch SOW" → Run workflow → paste the SOW path. Runs in parallel up to a fleet cap of 10.
+- **Dispatch a ticket:** Actions tab → "Dispatch ticket" → Run workflow → paste the ticket path (`sows/foo.md` or `dx/foo.md`). Runs in parallel up to a fleet cap of 10. See [Work types](#work-types).
 - **Live dashboard:** <https://developers.progstrength.fitness/d/developer-platform> — fleet overview, per-worker drill-down, run history, live Claude log tail.
 - **Manager host health:** <https://developers.progstrength.fitness/d/manager-host-health> — CPU/memory/disk/network/per-container metrics for right-sizing the manager itself.
 - **CloudWatch logs:** `/aws/ec2/prog-strength-developer/<instance-id>`.

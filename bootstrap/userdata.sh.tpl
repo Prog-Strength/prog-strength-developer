@@ -508,30 +508,37 @@ gh repo clone "${github_org}/prog-strength-docs"
 
 SOW_FILE="$WORKDIR/prog-strength-docs/${sow_path}"
 if [ ! -f "$SOW_FILE" ]; then
-  log "FATAL: SOW not found at $SOW_FILE"
+  log "FATAL: ticket not found at $SOW_FILE"
   terminate_self
   exit 1
 fi
 
-log "Reading repo list from SOW frontmatter"
-# Extract the YAML frontmatter block (between the first pair of '---')
-# and pull repos[] via python (always available on AL2023 + pip).
-REPOS=$(python3 - <<PY
-import re, sys, yaml
-with open("$SOW_FILE") as f:
-    text = f.read()
-m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
-if not m:
-    print("FATAL: SOW has no YAML frontmatter", file=sys.stderr)
-    sys.exit(1)
-meta = yaml.safe_load(m.group(1)) or {}
-for r in meta.get("repos") or []:
-    print(r)
-PY
-)
+# Clone prog-strength-developer up front so bootstrap/ticket.py is on disk
+# before we parse the ticket. ticket.py owns the type-routing + validation
+# (see bootstrap/ticket.py) for both work types; the prompt template it
+# selects lives alongside it here too. Cloning at boot (rather than
+# inlining into userdata) keeps the rendered user_data under EC2's 16KB
+# limit and lets the prompt/routing iterate via PR, not a launch-template
+# replacement.
+log "Cloning prog-strength-developer for ticket routing + prompt template"
+gh repo clone "${github_org}/prog-strength-developer" /opt/prog-strength-developer-repo
+
+# Parse the ticket's frontmatter via ticket.py: read its repo clone-list
+# AND validate the work type. This is the fail-fast boot guard — a
+# malformed DX (e.g. fewer enumerated idioms than variant_count) raises a
+# single-line error HERE, before any repo is cloned or Claude runs,
+# instead of after a wasted six-hour run. PYTHONPATH points at the cloned
+# repo so `bootstrap.ticket` imports; pyyaml was installed above.
+log "Parsing ticket frontmatter (type + repos) via bootstrap/ticket.py"
+if ! REPOS=$(PYTHONPATH=/opt/prog-strength-developer-repo \
+    python3 -m bootstrap.ticket repos --ticket "$SOW_FILE" 2>/tmp/ticket-parse-err); then
+  log "FATAL: ticket validation failed: $(cat /tmp/ticket-parse-err)"
+  terminate_self
+  exit 1
+fi
 
 if [ -z "$REPOS" ]; then
-  log "FATAL: SOW frontmatter has empty repos:[]"
+  log "FATAL: ticket frontmatter has empty repos:[]"
   terminate_self
   exit 1
 fi
@@ -546,34 +553,34 @@ for repo in $REPOS; do
 done
 
 # --------------------------------------------------------------------
-# Render the Claude prompt and run Claude Code.
-#
-# The prompt template lives in this repo at bootstrap/prompt.md.tpl.
-# Cloning prog-strength-developer at boot (rather than inlining the
-# template into userdata) keeps the rendered user_data well under
-# EC2's 16KB limit and lets iteration on the prompt happen via PR
-# instead of a launch-template replacement.
+# Render the Claude prompt and run Claude Code. The prog-strength-developer
+# repo was cloned to /opt/prog-strength-developer-repo above (it had to be
+# on disk for the ticket parse).
 # --------------------------------------------------------------------
-log "Cloning prog-strength-developer for prompt template"
-gh repo clone "${github_org}/prog-strength-developer" /opt/prog-strength-developer-repo
-
-# Now that the repo is on disk, drop the exporter script into place and
-# start the unit registered earlier. State transitions to 'working'
-# right before we hand off to Claude.
+# Drop the exporter script into place and start the unit registered
+# earlier. State transitions to 'working' right before we hand off to
+# Claude.
 install -m 0755 /opt/prog-strength-developer-repo/bootstrap/worker_exporter.py /usr/local/bin/worker_exporter.py
 systemctl enable --now worker_exporter
 
-log "Rendering Claude prompt for SOW ${sow_path}"
-# SOW_SLUG was computed at the top of the script so it could feed the
-# CloudWatch agent config. Reusing the same value here keeps the prompt
-# substitution and the log stream name in sync.
-sed \
-  -e "s|__SOW_PATH__|${sow_path}|g" \
-  -e "s|__SOW_SLUG__|$SOW_SLUG|g" \
-  -e "s|__GITHUB_ORG__|${github_org}|g" \
-  -e "s|__TODAY__|$(date -u +%F)|g" \
-  /opt/prog-strength-developer-repo/bootstrap/prompt.md.tpl \
-  > "$WORKDIR/prompt.md"
+log "Rendering Claude prompt for ticket ${sow_path}"
+# ticket.py picks the prompt template by work type (prompt-dx.md.tpl for
+# type: dx, prompt.md.tpl otherwise) and substitutes the shared
+# __SOW_PATH__/__SOW_SLUG__/__GITHUB_ORG__/__TODAY__ tokens plus, for DX,
+# __SURFACE__/__IDIOMS__/__REFERENCES__/__SCOPE__/__VARIANT_COUNT__. Kept
+# here (not inline sed) so the routing is the unit-tested code path in
+# tests/test_ticket.py. SOW_SLUG was computed at the top of the script to
+# feed the CloudWatch agent config; passing the same value keeps the
+# prompt substitution and the log stream name in sync.
+PYTHONPATH=/opt/prog-strength-developer-repo \
+  python3 -m bootstrap.ticket render \
+  --ticket "$SOW_FILE" \
+  --sow-path "${sow_path}" \
+  --sow-slug "$SOW_SLUG" \
+  --github-org "${github_org}" \
+  --today "$(date -u +%F)" \
+  --templates-dir /opt/prog-strength-developer-repo/bootstrap \
+  --out "$WORKDIR/prompt.md"
 
 # Transfer the workspace to the developer user so claude (running as
 # developer) can read the prompt + cloned repos and write back the
