@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.9.2...v0.10.0) (2026-06-16)
+
+
+### Features
+
+* **worker:** add DX (design exploration) work type ([f5a115d](https://github.com/Prog-Strength/prog-strength-developer/commit/f5a115ddaf963d333ee66829c63cae365354c4ff))
+
 ## [0.9.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.9.1...v0.9.2) (2026-06-16)
 
 
