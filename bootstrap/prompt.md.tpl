@@ -19,6 +19,12 @@ request on each one against `main`.
 Follow the standard Prog Strength autonomous workflow:
 
 1. **Read the SOW.** Understand the goals, non-goals, and constraints.
+   If the SOW touches frontend, also read
+   `/workspace/prog-strength-docs/design-system.md` (if present) and
+   **conform to it**: use its tokens (palette, accent, type) rather than
+   introducing new ones, unless the SOW explicitly says it extends the
+   system. A SOW that implements a chosen DX variant should match the
+   design system, not the throwaway mockup's incidental colours.
 2. **Find or write the plan.** If a plan already exists at
    `/workspace/prog-strength-docs/plans/*-__SOW_SLUG__.md`, use it as-is.
    If not, produce one by invoking the `superpowers:writing-plans` skill.
