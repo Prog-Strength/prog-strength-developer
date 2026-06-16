@@ -37,17 +37,32 @@ that is the surface repo (`prog-strength-web`) plus `prog-strength-docs`
    you skim them the variants collapse into re-skinned accent colors,
    which defeats the entire exercise.
 
-2. **Invoke the `frontend-design` skill and follow it.** This is a design
+2. **Read the design system and honor `__SCOPE__`.** Read
+   `/workspace/prog-strength-docs/design-system.md` if it exists — it is the
+   canonical record of decided visual conventions. Then apply it by scope:
+   - **`in-system`** — **every variant MUST use the design system's tokens**:
+     its palette, its single accent, and its primary type family. Variants
+     diverge **only** on *layout, structure, density, and composition* — they
+     do **NOT** re-decide the palette, accent, or type. Do not reintroduce a
+     different accent or base font "to differentiate"; that re-litigates a
+     settled decision and is exactly what `in-system` forbids. The spread
+     comes from how the surface is *arranged*, not from recolouring it.
+   - **`greenfield`** — you MAY explore beyond the system, but its **Fixed
+     Points** (in the doc — at minimum the Prog Strength brand and the dark
+     theme) still hold for every variant.
+   If `design-system.md` is absent, proceed from the ticket alone.
+
+3. **Invoke the `frontend-design` skill and follow it.** This is a design
    exploration — visual quality and, above all, *differentiation between
    variants* are the whole point. Lean on the skill for taste; do not
    settle for the generic median-AI frontend.
 
-3. **Read `prog-strength-web`'s `AGENTS.md`** and follow its existing
+4. **Read `prog-strength-web`'s `AGENTS.md`** and follow its existing
    routing, component, styling, and feature-flag conventions. The
    comparison route must look native to the codebase even though it is
    throwaway.
 
-4. **Build ONE comparison route** at `/design-explore/__SURFACE__` in
+5. **Build ONE comparison route** at `/design-explore/__SURFACE__` in
    `prog-strength-web` that renders every variant on a single screen, each
    clearly labeled with its idiom name. It MUST be **behind a feature
    flag / env gate** (using the repo's existing pattern) so it is never
@@ -56,12 +71,14 @@ that is the surface repo (`prog-strength-web`) plus `prog-strength-docs`
    between variants is fine and expected; shared abstraction is NOT the
    goal, divergence is.
 
-5. **Make each variant realize a different idiom** along **type scale,
-   color logic, and spacing rhythm** — not merely a swapped accent color.
-   Map each variant to its idiom explicitly, both in a code comment at the
-   top of the variant component and in the PR body.
+6. **Make each variant realize a different idiom** along **type scale,
+   color logic, and spacing rhythm** — not merely a swapped accent color
+   (and, when `__SCOPE__` is `in-system`, *within* the design system's
+   palette/accent/type — diverging on layout, not colour). Map each variant
+   to its idiom explicitly, both in a code comment at the top of the variant
+   component and in the PR body.
 
-6. **Treat the code as disposable.** Rough is acceptable and expected —
+7. **Treat the code as disposable.** Rough is acceptable and expected —
    the winning direction gets reimplemented properly by a downstream SOW.
    Do **not** over-engineer, do **not** write tests for the mockups, and
    do **not** wire variants to real data services unless it is trivial.
