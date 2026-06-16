@@ -1,3 +1,10 @@
+## [0.9.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.9.1...v0.9.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **worker:** arm the local lint/test gate before PRs are opened ([226fcbf](https://github.com/Prog-Strength/prog-strength-developer/commit/226fcbf2e8798ff6a65229eabc8c20ec10bbc1cc))
+
 ## [0.9.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.9.0...v0.9.1) (2026-06-15)
 
 
