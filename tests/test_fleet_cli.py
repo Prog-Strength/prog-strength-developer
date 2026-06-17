@@ -120,6 +120,17 @@ def test_list_shows_active_runs(capsys):
     assert "sows/a.md" in capsys.readouterr().out
 
 
+def test_attach_threads_compute_type_into_history():
+    reg = FakeRunRegistry()
+    run(["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1"], reg)
+    run(
+        ["attach", "--sow", "sows/foo.md", "--dispatch-id", "d1",
+         "--instance-id", "i-1", "--compute-type", "ec2:t3.xlarge"],
+        reg,
+    )
+    assert reg.list_history("sows/foo.md")[0].compute_type == "ec2:t3.xlarge"
+
+
 def test_acquire_records_doc_type_from_path():
     reg = FakeRunRegistry()
     run(["acquire", "--sow", "dx/cards.md", "--dispatch-id", "d1"], reg)

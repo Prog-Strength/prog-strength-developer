@@ -64,7 +64,12 @@ class FakeRunRegistry(RunRegistry):
         return AcquireResult(acquired=True, record=record)
 
     def attach_instance(
-        self, sow: str, dispatch_id: str, instance_id: str, now: int
+        self,
+        sow: str,
+        dispatch_id: str,
+        instance_id: str,
+        now: int,
+        compute_type: str | None = None,
     ) -> RunRecord:
         existing = self._rows.get(sow)
         if existing is None or existing.dispatch_id != dispatch_id:
@@ -75,8 +80,9 @@ class FakeRunRegistry(RunRegistry):
         self._rows[sow] = updated
         hist = self._history.get((sow, dispatch_id))
         if hist is not None:
+            extra = {"compute_type": compute_type} if compute_type is not None else {}
             self._history[(sow, dispatch_id)] = replace(
-                hist, instance_id=instance_id, updated_at=now
+                hist, instance_id=instance_id, updated_at=now, **extra
             )
         return updated
 

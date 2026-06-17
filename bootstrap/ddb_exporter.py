@@ -34,18 +34,20 @@ DEFAULT_REFRESH_SECONDS = 60
 #: Aggregate gauges keyed by metric name → label set, matching the samples
 #: produced by fleet.metrics.aggregate.
 _LABELED = {
-    metrics.RUNS_TOTAL: ["doc_type", "outcome"],
+    metrics.RUNS_TOTAL: ["doc_type", "compute_type", "outcome"],
     metrics.PRS_OPENED_TOTAL: ["doc_type", "outcome"],
-    metrics.COMPUTE_SECONDS_TOTAL: ["doc_type"],
+    metrics.COMPUTE_SECONDS_TOTAL: ["doc_type", "compute_type"],
+    metrics.COMPUTE_COST_TOTAL: ["doc_type", "compute_type"],
     metrics.DURATION_AVG: ["doc_type"],
     metrics.DURATION_P90: ["doc_type"],
     metrics.DURATION_MAX: ["doc_type"],
 }
 
 _HELP = {
-    metrics.RUNS_TOTAL: "Run-history rows by doc_type and outcome (outcome=working is in-flight).",
+    metrics.RUNS_TOTAL: "Run-history rows by doc_type, instance type, and outcome (outcome=working is in-flight).",
     metrics.PRS_OPENED_TOTAL: "PRs opened, summed by doc_type and outcome.",
-    metrics.COMPUTE_SECONDS_TOTAL: "Cumulative worker compute-time (sum of run durations) by doc_type.",
+    metrics.COMPUTE_SECONDS_TOTAL: "Cumulative worker compute-time (sum of run durations) by doc_type and instance type.",
+    metrics.COMPUTE_COST_TOTAL: "Estimated on-demand cost (USD): run duration x hardcoded us-east-2 hourly rate, by doc_type and instance type.",
     metrics.DURATION_AVG: "Mean run duration over terminal runs by doc_type (all = across types).",
     metrics.DURATION_P90: "p90 run duration over terminal runs by doc_type (all = across types).",
     metrics.DURATION_MAX: "Max run duration over terminal runs by doc_type (all = across types).",

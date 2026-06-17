@@ -150,7 +150,12 @@ class DynamoRunRegistry(RunRegistry):
         return AcquireResult(acquired=True, record=record)
 
     def attach_instance(
-        self, sow: str, dispatch_id: str, instance_id: str, now: int
+        self,
+        sow: str,
+        dispatch_id: str,
+        instance_id: str,
+        now: int,
+        compute_type: str | None = None,
     ) -> RunRecord:
         try:
             resp = self._table.update_item(
@@ -172,10 +177,17 @@ class DynamoRunRegistry(RunRegistry):
             ) from None
         lock = resp["Attributes"]
         # Patch the same dispatch's run-history row (keyed by its started_at).
+        # The resolved instance type, if supplied, upgrades the coarse
+        # compute_type written at acquire.
+        update = "SET instance_id = :iid, updated_at = :now"
+        values: dict = {":iid": instance_id, ":now": now}
+        if compute_type is not None:
+            update += ", compute_type = :ct"
+            values[":ct"] = compute_type
         self._table.update_item(
             Key={"sow": sow, "sk": _run_sk(int(lock["started_at"]), dispatch_id)},
-            UpdateExpression="SET instance_id = :iid, updated_at = :now",
-            ExpressionAttributeValues={":iid": instance_id, ":now": now},
+            UpdateExpression=update,
+            ExpressionAttributeValues=values,
         )
         return _to_record(lock)
 

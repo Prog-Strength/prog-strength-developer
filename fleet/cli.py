@@ -47,6 +47,11 @@ def _build_parser() -> argparse.ArgumentParser:
     att.add_argument("--sow", required=True)
     att.add_argument("--dispatch-id", required=True)
     att.add_argument("--instance-id", required=True)
+    att.add_argument(
+        "--compute-type",
+        default=None,
+        help="resolved compute, e.g. ec2:t3.xlarge; recorded on the run-history row",
+    )
 
     rel = sub.add_parser("release", help="free a SOW when a run finishes")
     rel.add_argument("--sow", required=True)
@@ -100,7 +105,11 @@ def run(argv: list[str], *, registry: RunRegistry, now: int) -> int:
     if args.command == "attach":
         try:
             registry.attach_instance(
-                args.sow, dispatch_id=args.dispatch_id, instance_id=args.instance_id, now=now
+                args.sow,
+                dispatch_id=args.dispatch_id,
+                instance_id=args.instance_id,
+                now=now,
+                compute_type=args.compute_type,
             )
         except FleetError as exc:
             print(f"attach failed: {exc}", file=sys.stderr)

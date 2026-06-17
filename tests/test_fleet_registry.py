@@ -249,3 +249,19 @@ def test_scan_history_returns_every_run_across_tickets():
 
 def test_scan_history_is_empty_when_nothing_dispatched():
     assert FakeRunRegistry().scan_history() == []
+
+
+def test_attach_records_compute_type_on_history():
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    reg.attach_instance(
+        "sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110, compute_type="ec2:t3.xlarge"
+    )
+    assert reg.list_history("sows/foo.md")[0].compute_type == "ec2:t3.xlarge"
+
+
+def test_attach_without_compute_type_leaves_the_acquire_default():
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110)
+    assert reg.list_history("sows/foo.md")[0].compute_type == "ec2"

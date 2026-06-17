@@ -31,9 +31,29 @@ ALL = "all"
 RUNS_TOTAL = "developer_history_runs_total"
 PRS_OPENED_TOTAL = "developer_history_prs_opened_total"
 COMPUTE_SECONDS_TOTAL = "developer_history_compute_seconds_total"
+COMPUTE_COST_TOTAL = "developer_history_compute_cost_dollars_total"
 DURATION_AVG = "developer_history_run_duration_seconds_avg"
 DURATION_P90 = "developer_history_run_duration_seconds_p90"
 DURATION_MAX = "developer_history_run_duration_seconds_max"
+
+#: On-demand Linux $/hr by EC2 instance type, us-east-2. Hardcoded — the
+#: fleet is small and single-region, so a static map beats a Pricing API
+#: call. Extend as the fleet diversifies. The cost metric is a proxy:
+#: run duration × this rate; an unpriced type contributes 0.
+PRICE_USD_PER_HOUR = {
+    "t3.large": 0.0832,
+    "t3.xlarge": 0.1664,
+    "t3.2xlarge": 0.3328,
+}
+
+
+def _hourly_rate(compute_type: str) -> float:
+    """On-demand $/hr for a ``compute_type`` like ``ec2:t3.xlarge``. 0.0
+    for a coarse ``ec2`` (type never resolved) or any unpriced type."""
+    prefix, _, instance_type = compute_type.partition(":")
+    if prefix != "ec2" or not instance_type:
+        return 0.0
+    return PRICE_USD_PER_HOUR.get(instance_type, 0.0)
 
 
 @dataclass(frozen=True)
@@ -84,19 +104,32 @@ def aggregate(rows: list[RunHistory]) -> list[MetricSample]:
 
     for doc_type in doc_types:
         dt_rows = [r for r in rows if r.doc_type == doc_type]
+
+        # PRs are summed by (doc_type, outcome) only.
         for outcome in OUTCOMES:
             matching = [r for r in dt_rows if _bucket(r) == outcome]
-            samples.append(
-                MetricSample(RUNS_TOTAL, {"doc_type": doc_type, "outcome": outcome}, float(len(matching)))
-            )
             prs = sum((r.prs_opened or 0) for r in matching)
             samples.append(
                 MetricSample(PRS_OPENED_TOTAL, {"doc_type": doc_type, "outcome": outcome}, float(prs))
             )
 
-        terminal = [r.duration_seconds for r in dt_rows if r.duration_seconds is not None]
-        samples.append(MetricSample(COMPUTE_SECONDS_TOTAL, {"doc_type": doc_type}, float(sum(terminal))))
-        samples.extend(_duration_samples(doc_type, terminal))
+        # Runs / compute-time / cost are additionally broken down by the
+        # resolved instance type (compute_type).
+        for compute_type in sorted({r.compute_type for r in dt_rows}):
+            ct_rows = [r for r in dt_rows if r.compute_type == compute_type]
+            base = {"doc_type": doc_type, "compute_type": compute_type}
+            for outcome in OUTCOMES:
+                n = sum(1 for r in ct_rows if _bucket(r) == outcome)
+                samples.append(MetricSample(RUNS_TOTAL, {**base, "outcome": outcome}, float(n)))
+
+            terminal = [r.duration_seconds for r in ct_rows if r.duration_seconds is not None]
+            seconds = float(sum(terminal))
+            samples.append(MetricSample(COMPUTE_SECONDS_TOTAL, base, seconds))
+            samples.append(MetricSample(COMPUTE_COST_TOTAL, base, seconds / 3600 * _hourly_rate(compute_type)))
+
+        # Duration stats stay per-doc_type (over all terminal rows).
+        dt_terminal = [r.duration_seconds for r in dt_rows if r.duration_seconds is not None]
+        samples.extend(_duration_samples(doc_type, dt_terminal))
 
     all_terminal = [r.duration_seconds for r in rows if r.duration_seconds is not None]
     samples.extend(_duration_samples(ALL, all_terminal))

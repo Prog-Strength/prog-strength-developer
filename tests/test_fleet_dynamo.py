@@ -134,6 +134,14 @@ def test_history_row_has_no_ttl_attribute(registry):
     assert run_rows and all("expires_at" not in i for i in run_rows)
 
 
+def test_attach_records_compute_type_on_history(registry):
+    registry.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    registry.attach_instance(
+        "sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110, compute_type="ec2:t3.xlarge"
+    )
+    assert registry.list_history("sows/foo.md")[0].compute_type == "ec2:t3.xlarge"
+
+
 def test_scan_history_returns_only_run_rows(registry):
     registry.try_acquire("sows/a.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
     registry.attach_instance("sows/a.md", dispatch_id="d1", instance_id="i-1", now=110)
