@@ -118,3 +118,36 @@ def test_list_shows_active_runs(capsys):
     code = run(["list"], reg)
     assert code == OK
     assert "sows/a.md" in capsys.readouterr().out
+
+
+def test_acquire_records_doc_type_from_path():
+    reg = FakeRunRegistry()
+    run(["acquire", "--sow", "dx/cards.md", "--dispatch-id", "d1"], reg)
+    assert reg.list_history("dx/cards.md")[0].doc_type == "dx"
+
+
+def test_release_threads_prs_opened_into_history():
+    reg = FakeRunRegistry()
+    run(["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1"], reg, now=100)
+    run(["attach", "--sow", "sows/foo.md", "--dispatch-id", "d1", "--instance-id", "i-1"], reg)
+    code = run(
+        ["release", "--sow", "sows/foo.md", "--instance-id", "i-1",
+         "--outcome", "success", "--prs-opened", "4"],
+        reg,
+        now=500,
+    )
+    assert code == OK
+    row = reg.list_history("sows/foo.md")[0]
+    assert row.prs_opened == 4
+    assert row.duration_seconds == 400
+
+
+def test_release_defaults_prs_opened_to_zero():
+    reg = FakeRunRegistry()
+    run(["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1"], reg)
+    run(
+        ["release", "--sow", "sows/foo.md", "--instance-id", "none",
+         "--outcome", "error", "--force"],
+        reg,
+    )
+    assert reg.list_history("sows/foo.md")[0].prs_opened == 0

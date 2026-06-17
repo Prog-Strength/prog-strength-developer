@@ -134,6 +134,14 @@ data "aws_iam_policy_document" "manager_inline" {
     actions   = ["ec2:DescribeInstances", "ec2:DescribeAvailabilityZones"]
     resources = ["*"]
   }
+
+  # The ddb_exporter service scans the run-history table to publish
+  # aggregate metrics. Read-only, scoped to that one table.
+  statement {
+    sid       = "ScanRunHistory"
+    actions   = ["dynamodb:Scan"]
+    resources = [aws_dynamodb_table.runs.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "manager_inline" {

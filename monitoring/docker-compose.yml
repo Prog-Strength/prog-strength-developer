@@ -36,6 +36,20 @@ services:
       - "--persistence.interval=30s"
     restart: unless-stopped
 
+  # Scans the prog-strength-developer-runs DynamoDB table every 60s and
+  # serves aggregate run-history gauges on :9102 (scraped over the compose
+  # network — no host port). Built from the repo so it can bundle the
+  # `fleet` package; AWS creds come from the manager instance profile via
+  # IMDS (the manager sets http_put_response_hop_limit=2 for containers).
+  ddb_exporter:
+    build:
+      context: ${PROG_STRENGTH_DEVELOPER_DIR:-/opt/prog-strength-developer}
+      dockerfile: monitoring/ddb_exporter/Dockerfile
+    environment:
+      - AWS_REGION=us-east-2
+      - DDB_EXPORTER_REFRESH_SECONDS=60
+    restart: unless-stopped
+
   node_exporter:
     image: prom/node-exporter:v1.9.1
     volumes:

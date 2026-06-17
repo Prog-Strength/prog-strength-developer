@@ -2,8 +2,9 @@ name: Deploy manager
 
 # Runs on push to main when the manager's config changes (or on manual
 # dispatch). SSMs into the manager, pulls main, and re-runs
-# `docker compose up -d` to apply the new config. No SSH; no public
-# port 22 on the manager.
+# `docker compose up -d --build` to apply the new config (--build so the
+# locally-built ddb_exporter image picks up code changes). No SSH; no
+# public port 22 on the manager.
 
 on:
   push:
@@ -12,6 +13,11 @@ on:
       - "monitoring/**"
       - "caddy/**"
       - ".github/workflows/deploy-manager.yml"
+      # The ddb_exporter image bundles these; a code-only change must also
+      # rebuild + redeploy the manager (monitoring/** already covers its
+      # Dockerfile, the compose file, prometheus.yml, and dashboards).
+      - "bootstrap/ddb_exporter.py"
+      - "fleet/**"
   workflow_dispatch:
 
 permissions:
@@ -68,7 +74,7 @@ jobs:
               "install -d -o 65534 -g 65534 /var/lib/manager/pushgateway",
               "install -d -o 10001 -g 10001 /var/lib/manager/loki",
               "docker compose pull",
-              "docker compose up -d"
+              "docker compose up -d --build"
             ]' \
             --query 'Command.CommandId' --output text)
           echo "Command ID: $CMD_ID"
