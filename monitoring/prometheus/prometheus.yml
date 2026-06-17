@@ -32,6 +32,14 @@ scrape_configs:
     static_configs:
       - targets: ["pushgateway:9091"]
 
+  # Run-history exporter — aggregate metrics scanned from the
+  # prog-strength-developer-runs DynamoDB table (lifetime totals, success
+  # rates, durations, PRs). Self-refreshes every 60s, so the 15s scrape
+  # just reads its cached gauges.
+  - job_name: ddb_runs_exporter
+    static_configs:
+      - targets: ["ddb_exporter:9102"]
+
   # Worker node_exporter — host metrics (CPU, memory, disk, network).
   - job_name: developer_worker_node
     ec2_sd_configs:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from fleet.models import AcquireResult, RunRecord
+from fleet.models import AcquireResult, RunHistory, RunRecord
 
 
 class FleetError(Exception):
@@ -30,12 +30,18 @@ class RunRegistry(ABC):
         now: int,
         ttl_seconds: int,
         dispatched_by: str | None = None,
+        doc_type: str | None = None,
+        compute_type: str = "ec2",
     ) -> AcquireResult:
         """Atomically claim ``sow`` for ``dispatch_id``.
 
         Succeeds when the SOW is unheld, terminal, or its lock has
         expired. Otherwise returns ``acquired=False`` with the current
         holder in ``conflict``. Never blocks; never half-writes.
+
+        On success, also appends an immutable run-history row (status
+        ``working``) carrying ``doc_type`` (derived from the ticket path
+        when None) and ``compute_type`` for the durable record.
         """
 
     @abstractmethod
@@ -43,8 +49,8 @@ class RunRegistry(ABC):
         self, sow: str, dispatch_id: str, instance_id: str, now: int
     ) -> RunRecord:
         """Record the launched ``instance_id`` on the lock this dispatch
-        holds. Raises :class:`FleetError` if the lock is missing or owned
-        by a different dispatch."""
+        holds, and on its run-history row. Raises :class:`FleetError` if
+        the lock is missing or owned by a different dispatch."""
 
     @abstractmethod
     def release(
@@ -54,11 +60,17 @@ class RunRegistry(ABC):
         outcome: str,
         now: int,
         force: bool = False,
+        prs_opened: int | None = None,
     ) -> bool:
         """Mark the run terminal, freeing the SOW. Returns True if
         released. A non-matching ``instance_id`` is a no-op (returns
         False) so a superseded worker can't free the new owner's lock —
-        unless ``force`` is set (operator override)."""
+        unless ``force`` is set (operator override).
+
+        When the lock is actually released, the matching run-history row
+        is finalized with the ``outcome``, ``finished_at``,
+        ``duration_seconds``, and ``prs_opened``. A no-op release leaves
+        history untouched, so a superseded run's row stays ``working``."""
 
     @abstractmethod
     def get(self, sow: str) -> RunRecord | None:
@@ -67,3 +79,13 @@ class RunRegistry(ABC):
     @abstractmethod
     def list_active(self, now: int) -> list[RunRecord]:
         """Return all runs currently holding a SOW (WORKING, unexpired)."""
+
+    @abstractmethod
+    def list_history(self, sow: str) -> list[RunHistory]:
+        """Return every run-history row for ``sow``, oldest first. Empty
+        if the ticket has never been dispatched."""
+
+    @abstractmethod
+    def scan_history(self) -> list[RunHistory]:
+        """Return every run-history row across all tickets (the durable
+        record the metrics exporter aggregates). Excludes lock items."""

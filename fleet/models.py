@@ -62,6 +62,57 @@ class RunRecord:
         return self.status is RunStatus.WORKING and self.expires_at > now
 
 
+#: Known top-level ticket directories → recordkeeping doc_type. The
+#: dispatch workflow doesn't check out prog-strength-docs, so doc_type is
+#: derived from the ticket path here rather than from frontmatter; the
+#: convention is one directory per work type. New types add an entry.
+_DOC_TYPE_BY_DIR = {
+    "sows": "sow",
+    "dx": "dx",
+}
+
+
+def doc_type_for_path(path: str) -> str:
+    """Recordkeeping doc_type for a ticket path.
+
+    Maps the leading directory: ``sows/…`` → ``"sow"``, ``dx/…`` → ``"dx"``.
+    An unmapped directory is returned verbatim (so a new work type is
+    recorded honestly until a mapping entry is added); a path with no
+    directory returns the whole string.
+    """
+    head, sep, _ = path.partition("/")
+    if not sep:
+        return path
+    return _DOC_TYPE_BY_DIR.get(head, head)
+
+
+@dataclass
+class RunHistory:
+    """One immutable run-history row — the durable record of a single
+    dispatch, distinct from the mutable per-ticket lock (:class:`RunRecord`).
+
+    Created at acquire with ``status=working`` and the dispatch metadata,
+    patched with ``instance_id`` at attach, and finalized at release with
+    the terminal ``outcome``/``finished_at``/``duration_seconds``/
+    ``prs_opened``. A row left at ``working`` with no ``finished_at`` is a
+    run that died or was superseded before releasing.
+    """
+
+    sow: str
+    dispatch_id: str
+    doc_type: str
+    status: RunStatus
+    started_at: int
+    updated_at: int
+    compute_type: str = "ec2"
+    instance_id: str | None = None
+    dispatched_by: str | None = None
+    outcome: str | None = None
+    finished_at: int | None = None
+    duration_seconds: int | None = None
+    prs_opened: int | None = None
+
+
 @dataclass
 class AcquireResult:
     """Outcome of a ``try_acquire`` call.

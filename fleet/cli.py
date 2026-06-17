@@ -53,6 +53,9 @@ def _build_parser() -> argparse.ArgumentParser:
     rel.add_argument("--instance-id", required=True)
     rel.add_argument("--outcome", default="success", choices=["success", "error", "timeout"])
     rel.add_argument("--force", action="store_true", help="operator override; ignore instance match")
+    rel.add_argument(
+        "--prs-opened", type=int, default=0, help="PRs this run opened; recorded in run history"
+    )
 
     lst = sub.add_parser("list", help="show SOWs currently being built")
     lst.add_argument("--json", action="store_true")
@@ -112,6 +115,7 @@ def run(argv: list[str], *, registry: RunRegistry, now: int) -> int:
             outcome=args.outcome,
             now=now,
             force=args.force,
+            prs_opened=args.prs_opened,
         )
         if released:
             print(f"Released {args.sow!r} (outcome={args.outcome}).")

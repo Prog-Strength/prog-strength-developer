@@ -476,6 +476,205 @@
           "datasource": { "type": "loki", "uid": "Loki" }
         }
       ]
+    },
+    {
+      "id": 140,
+      "type": "row",
+      "title": "📈 Lifetime / History (durable record)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 74 },
+      "panels": []
+    },
+    {
+      "id": 141,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 75 },
+      "options": {
+        "mode": "markdown",
+        "content": "Durable, **all-time** aggregates scanned from the run-history DynamoDB table (one immutable row per dispatch) — distinct from the live 24h stats above, which Prometheus only retains for 15 days. Published by the `ddb_exporter` service, which rescans every 60s.\n\n- **Total runs** — every dispatch ever recorded (finalized; excludes still-running).\n- **Success rate** — success ÷ finalized runs, all-time. Red < 80%, yellow 80–95%, green ≥ 95%.\n- **Total PRs opened** / **Cumulative compute-time** — lifetime output and a worker-compute (cost) proxy.\n- **p90 / avg duration** — across all finalized runs.\n- **By document type** — the same split for `sow` vs `dx` (note: `dx` runs open draft, non-merge PRs, so PRs/run reads differently there)."
+      }
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "Total runs (all-time)",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 78 },
+      "targets": [
+        {
+          "expr": "sum(developer_history_runs_total{outcome=~\"success|error|timeout\"}) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "type": "stat",
+      "title": "Success rate (all-time)",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 78 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "expr": "100 * (sum(developer_history_runs_total{outcome=\"success\"}) or vector(0)) / clamp_min(sum(developer_history_runs_total{outcome=~\"success|error|timeout\"}) or vector(0), 1)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "type": "stat",
+      "title": "Total PRs opened",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 78 },
+      "targets": [
+        {
+          "expr": "sum(developer_history_prs_opened_total) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 53,
+      "type": "stat",
+      "title": "Cumulative compute-time",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 78 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "sum(developer_history_compute_seconds_total) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 54,
+      "type": "stat",
+      "title": "p90 duration (all-time)",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 78 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "developer_history_run_duration_seconds_p90{doc_type=\"all\"} or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 55,
+      "type": "stat",
+      "title": "Avg duration (all-time)",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 78 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "developer_history_run_duration_seconds_avg{doc_type=\"all\"} or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "type": "table",
+      "title": "By document type (all-time)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 82 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Success %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Avg duration" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "PRs / run" },
+            "properties": [{ "id": "decimals", "value": 2 }]
+          }
+        ]
+      },
+      "transformations": [
+        { "id": "joinByField", "options": { "byField": "doc_type", "mode": "outer" } },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true
+            },
+            "indexByName": {
+              "doc_type": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4
+            },
+            "renameByName": {
+              "doc_type": "Doc type",
+              "Value #A": "Runs",
+              "Value #B": "Success %",
+              "Value #C": "Avg duration",
+              "Value #D": "PRs / run"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "expr": "sum by (doc_type) (developer_history_runs_total{outcome=~\"success|error|timeout\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "100 * sum by (doc_type) (developer_history_runs_total{outcome=\"success\"}) / clamp_min(sum by (doc_type) (developer_history_runs_total{outcome=~\"success|error|timeout\"}), 1)",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "developer_history_run_duration_seconds_avg{doc_type!=\"all\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "sum by (doc_type) (developer_history_prs_opened_total) / clamp_min(sum by (doc_type) (developer_history_runs_total{outcome=~\"success|error|timeout\"}), 1)",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        }
+      ]
     }
   ]
 }

@@ -154,3 +154,98 @@ def test_outcome_maps_to_terminal_status():
     assert RunStatus.from_outcome("success") is RunStatus.DONE
     assert RunStatus.from_outcome("error") is RunStatus.ERROR
     assert RunStatus.from_outcome("timeout") is RunStatus.TIMEOUT
+
+
+# -- run history (the durable record alongside the lock) ----------------
+
+
+def test_acquire_writes_a_working_history_row():
+    reg = FakeRunRegistry()
+    reg.try_acquire(
+        "dx/cards.md", dispatch_id="d1", now=100, ttl_seconds=TTL, dispatched_by="alice"
+    )
+
+    history = reg.list_history("dx/cards.md")
+    assert len(history) == 1
+    row = history[0]
+    assert row.dispatch_id == "d1"
+    assert row.status is RunStatus.WORKING
+    assert row.doc_type == "dx"  # derived from the ticket path
+    assert row.compute_type == "ec2"
+    assert row.started_at == 100
+    assert row.dispatched_by == "alice"
+    # Not finalized yet: no terminal facts.
+    assert row.finished_at is None
+    assert row.duration_seconds is None
+
+
+def test_release_finalizes_the_matching_history_row():
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-123", now=110)
+
+    reg.release("sows/foo.md", instance_id="i-123", outcome="success", now=460, prs_opened=2)
+
+    row = reg.list_history("sows/foo.md")[0]
+    assert row.status is RunStatus.DONE
+    assert row.outcome == "success"
+    assert row.instance_id == "i-123"
+    assert row.finished_at == 460
+    assert row.duration_seconds == 360  # 460 - 100
+    assert row.prs_opened == 2
+
+
+def test_history_appends_a_row_per_dispatch():
+    """Re-dispatching a ticket must append history, never clobber the prior
+    run — that is what makes re-run/retry rates measurable."""
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    reg.release("sows/foo.md", instance_id=None, outcome="error", now=150)
+    reg.try_acquire("sows/foo.md", dispatch_id="d2", now=200, ttl_seconds=TTL)
+    reg.release("sows/foo.md", instance_id=None, outcome="success", now=260)
+
+    history = reg.list_history("sows/foo.md")
+    assert [r.dispatch_id for r in history] == ["d1", "d2"]  # sorted by started_at
+    assert [r.outcome for r in history] == ["error", "success"]
+
+
+def test_superseded_release_leaves_its_history_row_unfinalized():
+    """A worker whose lock was taken over must not finalize anyone's history;
+    its own row stays WORKING — the durable signal that it was superseded."""
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-old", now=110)
+    reg.try_acquire("sows/foo.md", dispatch_id="d2", now=1200, ttl_seconds=TTL)
+    reg.attach_instance("sows/foo.md", dispatch_id="d2", instance_id="i-new", now=1210)
+
+    # The old worker's late release is a no-op on the lock and on history.
+    reg.release("sows/foo.md", instance_id="i-old", outcome="error", now=1300)
+
+    by_dispatch = {r.dispatch_id: r for r in reg.list_history("sows/foo.md")}
+    assert by_dispatch["d1"].status is RunStatus.WORKING
+    assert by_dispatch["d1"].finished_at is None
+    assert by_dispatch["d2"].status is RunStatus.WORKING  # still running
+
+
+def test_history_is_empty_for_an_unknown_ticket():
+    assert FakeRunRegistry().list_history("sows/missing.md") == []
+
+
+def test_scan_history_returns_every_run_across_tickets():
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/a.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
+    reg.release("sows/a.md", instance_id=None, outcome="success", now=150)
+    reg.try_acquire("sows/a.md", dispatch_id="d2", now=200, ttl_seconds=TTL)  # re-dispatch
+    reg.try_acquire("dx/b.md", dispatch_id="d3", now=300, ttl_seconds=TTL)
+
+    rows = reg.scan_history()
+
+    assert {(r.sow, r.dispatch_id) for r in rows} == {
+        ("sows/a.md", "d1"),
+        ("sows/a.md", "d2"),
+        ("dx/b.md", "d3"),
+    }
+
+
+def test_scan_history_is_empty_when_nothing_dispatched():
+    assert FakeRunRegistry().scan_history() == []

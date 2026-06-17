@@ -100,11 +100,16 @@ release_sow_lock() {
     log "fleet package not present; skipping SOW lock release (TTL will reclaim)"
     return 0
   fi
-  log "Releasing SOW lock for ${sow_path} (outcome=$outcome)"
+  # Read the same PR count finalize_metrics pushes, so the durable
+  # run-history row records it alongside the Pushgateway metric.
+  local prs_count
+  prs_count=$(cat /var/run/developer-worker/prs_opened 2>/dev/null || echo 0)
+  log "Releasing SOW lock for ${sow_path} (outcome=$outcome, prs=$prs_count)"
   AWS_REGION="${aws_region}" PYTHONPATH="$repo" python3 -m fleet release \
     --sow "${sow_path}" \
     --instance-id "$${INSTANCE_ID:-none}" \
-    --outcome "$outcome" || log "fleet release errored (TTL will reclaim the lock)"
+    --outcome "$outcome" \
+    --prs-opened "$prs_count" || log "fleet release errored (TTL will reclaim the lock)"
 }
 
 terminate_self() {
