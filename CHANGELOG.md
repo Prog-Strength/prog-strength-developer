@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.11.0...v0.12.0) (2026-06-17)
+
+
+### Features
+
+* **fleet:** run-history record on the runs table + Prometheus exporter ([4b47c51](https://github.com/Prog-Strength/prog-strength-developer/commit/4b47c51a41f728c882fbe4bc138adbb98e4bf680))
+
 # [0.11.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.10.0...v0.11.0) (2026-06-16)
 
 
