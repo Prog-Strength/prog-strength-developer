@@ -46,11 +46,19 @@ class RunRegistry(ABC):
 
     @abstractmethod
     def attach_instance(
-        self, sow: str, dispatch_id: str, instance_id: str, now: int
+        self,
+        sow: str,
+        dispatch_id: str,
+        instance_id: str,
+        now: int,
+        compute_type: str | None = None,
     ) -> RunRecord:
         """Record the launched ``instance_id`` on the lock this dispatch
-        holds, and on its run-history row. Raises :class:`FleetError` if
-        the lock is missing or owned by a different dispatch."""
+        holds, and on its run-history row. When ``compute_type`` is given
+        (e.g. ``ec2:t3.xlarge``, now that the instance type is known) it
+        replaces the coarse value recorded at acquire on the history row.
+        Raises :class:`FleetError` if the lock is missing or owned by a
+        different dispatch."""
 
     @abstractmethod
     def release(

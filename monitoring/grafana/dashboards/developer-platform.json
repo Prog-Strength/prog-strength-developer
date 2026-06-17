@@ -493,7 +493,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 75 },
       "options": {
         "mode": "markdown",
-        "content": "Durable, **all-time** aggregates scanned from the run-history DynamoDB table (one immutable row per dispatch) — distinct from the live 24h stats above, which Prometheus only retains for 15 days. Published by the `ddb_exporter` service, which rescans every 60s.\n\n- **Total runs** — every dispatch ever recorded (finalized; excludes still-running).\n- **Success rate** — success ÷ finalized runs, all-time. Red < 80%, yellow 80–95%, green ≥ 95%.\n- **Total PRs opened** / **Cumulative compute-time** — lifetime output and a worker-compute (cost) proxy.\n- **p90 / avg duration** — across all finalized runs.\n- **By document type** — the same split for `sow` vs `dx` (note: `dx` runs open draft, non-merge PRs, so PRs/run reads differently there)."
+        "content": "Durable, **all-time** aggregates scanned from the run-history DynamoDB table (one immutable row per dispatch) — distinct from the live 24h stats above, which Prometheus only retains for 15 days. Published by the `ddb_exporter` service, which rescans every 60s.\n\n- **Total runs** — every dispatch ever recorded (finalized; excludes still-running).\n- **Success rate** — success ÷ finalized runs, all-time. Red < 80%, yellow 80–95%, green ≥ 95%.\n- **Total PRs opened** / **Cumulative compute-time** — lifetime output and total worker-compute.\n- **Est. cost** — duration × a hardcoded us-east-2 on-demand rate per instance type. A proxy: excludes boot/terminate overhead and EBS, and unpriced/coarse `ec2` rows count as $0.\n- **p90 / avg duration** — across all finalized runs.\n- **By document type / instance type** — the same metrics split by `sow` vs `dx` and by EC2 instance type (`dx` runs open draft, non-merge PRs, so PRs/run reads differently there)."
       }
     },
     {
@@ -596,10 +596,38 @@
       ]
     },
     {
+      "id": 57,
+      "type": "stat",
+      "title": "Est. cost (all-time)",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 82 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } },
+      "targets": [
+        {
+          "expr": "sum(developer_history_compute_cost_dollars_total) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "type": "stat",
+      "title": "Avg cost / run",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 82 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
+      "targets": [
+        {
+          "expr": "(sum(developer_history_compute_cost_dollars_total) or vector(0)) / clamp_min(sum(developer_history_runs_total{outcome=~\"success|error|timeout\"}) or vector(0), 1)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "id": 56,
       "type": "table",
       "title": "By document type (all-time)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 82 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 86 },
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -617,6 +645,13 @@
           {
             "matcher": { "id": "byName", "options": "PRs / run" },
             "properties": [{ "id": "decimals", "value": 2 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Est. cost" },
+            "properties": [
+              { "id": "unit", "value": "currencyUSD" },
+              { "id": "decimals", "value": 2 }
+            ]
           }
         ]
       },
@@ -630,21 +665,24 @@
               "Time 1": true,
               "Time 2": true,
               "Time 3": true,
-              "Time 4": true
+              "Time 4": true,
+              "Time 5": true
             },
             "indexByName": {
               "doc_type": 0,
               "Value #A": 1,
               "Value #B": 2,
               "Value #C": 3,
-              "Value #D": 4
+              "Value #D": 4,
+              "Value #E": 5
             },
             "renameByName": {
               "doc_type": "Doc type",
               "Value #A": "Runs",
               "Value #B": "Success %",
               "Value #C": "Avg duration",
-              "Value #D": "PRs / run"
+              "Value #D": "PRs / run",
+              "Value #E": "Est. cost"
             }
           }
         }
@@ -673,6 +711,80 @@
           "format": "table",
           "instant": true,
           "refId": "D"
+        },
+        {
+          "expr": "sum by (doc_type) (developer_history_compute_cost_dollars_total)",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        }
+      ]
+    },
+    {
+      "id": 59,
+      "type": "table",
+      "title": "By instance type (all-time)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 94 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Compute-time" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Est. cost" },
+            "properties": [
+              { "id": "unit", "value": "currencyUSD" },
+              { "id": "decimals", "value": 2 }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        { "id": "joinByField", "options": { "byField": "compute_type", "mode": "outer" } },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "indexByName": {
+              "compute_type": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3
+            },
+            "renameByName": {
+              "compute_type": "Instance type",
+              "Value #A": "Runs",
+              "Value #B": "Compute-time",
+              "Value #C": "Est. cost"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "expr": "sum by (compute_type) (developer_history_runs_total{outcome=~\"success|error|timeout\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (compute_type) (developer_history_compute_seconds_total)",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (compute_type) (developer_history_compute_cost_dollars_total)",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
         }
       ]
     }

@@ -169,10 +169,21 @@ jobs:
           SOW_PATH: ${{ inputs.sow_path }}
           IID: ${{ steps.run.outputs.instance_id }}
         run: |
+          # Resolve the launched instance type so the run-history row records
+          # ec2:<type> (used for the instance-type and cost dashboard metrics).
+          # Best-effort: fall back to the coarse "ec2" if the lookup fails.
+          ITYPE=$(aws ec2 describe-instances --instance-ids "$IID" \
+            --query 'Reservations[0].Instances[0].InstanceType' --output text 2>/dev/null || true)
+          if [ -z "$ITYPE" ] || [ "$ITYPE" = "None" ]; then
+            COMPUTE="ec2"
+          else
+            COMPUTE="ec2:$ITYPE"
+          fi
           uv run python -m fleet attach \
             --sow "$SOW_PATH" \
             --dispatch-id "$GITHUB_RUN_ID" \
-            --instance-id "$IID"
+            --instance-id "$IID" \
+            --compute-type "$COMPUTE"
 
       - name: Summary
         env:
