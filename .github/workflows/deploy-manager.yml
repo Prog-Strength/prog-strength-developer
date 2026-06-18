@@ -3,8 +3,10 @@ name: Deploy manager
 # Runs on push to main when the manager's config changes (or on manual
 # dispatch). SSMs into the manager, pulls main, and re-runs
 # `docker compose up -d --build` to apply the new config (--build so the
-# locally-built ddb_exporter image picks up code changes). No SSH; no
-# public port 22 on the manager.
+# locally-built ddb_exporter image picks up code changes), then SIGHUPs
+# Prometheus so a prometheus.yml-only change (e.g. a new scrape job) is
+# picked up — up -d alone won't recreate the unchanged container. No SSH;
+# no public port 22 on the manager.
 
 on:
   push:
@@ -74,7 +76,11 @@ jobs:
               "install -d -o 65534 -g 65534 /var/lib/manager/pushgateway",
               "install -d -o 10001 -g 10001 /var/lib/manager/loki",
               "docker compose pull",
-              "docker compose up -d --build"
+              "docker compose up -d --build",
+              "# Reload Prometheus: up -d wont recreate it when only the",
+              "# bind-mounted prometheus.yml changed, so a new scrape job",
+              "# would be ignored until restart. SIGHUP is a hot reload.",
+              "docker compose kill -s SIGHUP prometheus"
             ]' \
             --query 'Command.CommandId' --output text)
           echo "Command ID: $CMD_ID"
