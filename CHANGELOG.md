@@ -1,3 +1,10 @@
+## [0.13.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.13.0...v0.13.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deploy:** reload Prometheus on config change so new scrape jobs apply ([fe82cec](https://github.com/Prog-Strength/prog-strength-developer/commit/fe82cec0a2c487abf8702e4fb3b210dfa9533138))
+
 # [0.13.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.12.0...v0.13.0) (2026-06-17)
 
 
