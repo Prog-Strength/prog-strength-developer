@@ -19,6 +19,10 @@ services:
       - "--storage.tsdb.retention.time=15d"
       - "--web.console.libraries=/usr/share/prometheus/console_libraries"
       - "--web.console.templates=/usr/share/prometheus/consoles"
+      # Enables POST /-/reload for hot config reloads (no restart, no scrape
+      # gap). The deploy reloads via SIGHUP, but this also allows an ad-hoc
+      # `curl -X POST localhost:9090/-/reload` after editing prometheus.yml.
+      - "--web.enable-lifecycle"
     restart: unless-stopped
 
   pushgateway:
