@@ -1,3 +1,10 @@
+## [0.13.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.13.1...v0.13.2) (2026-06-19)
+
+
+### Bug Fixes
+
+* pin DX prompt to the single standard design-explore gate ([e20b551](https://github.com/Prog-Strength/prog-strength-developer/commit/e20b5518254a9c6b6afc43b11f4e1823fc50da8b))
+
 ## [0.13.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.13.0...v0.13.1) (2026-06-18)
 
 
