@@ -53,11 +53,13 @@ jobs:
       - name: terraform init
         working-directory: terraform
         # backend.tf uses use_lockfile = true; bucket comes from a
-        # workflow Variable, region from env.
+        # workflow Variable, region from env, and the per-env state key
+        # lands under this app's prefix (defaults to prod).
         run: |
           terraform init \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="region=${AWS_REGION}"
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="key=prog-strength-developer/${TF_STATE_ENV:-prod}/terraform.tfstate"
 
       - name: terraform validate
         working-directory: terraform
