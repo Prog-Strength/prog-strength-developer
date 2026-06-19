@@ -64,10 +64,17 @@ that is the surface repo (`prog-strength-web`) plus `prog-strength-docs`
 
 5. **Build ONE comparison route** at `/design-explore/__SURFACE__` in
    `prog-strength-web` that renders every variant on a single screen, each
-   clearly labeled with its idiom name. It MUST be **behind a feature
-   flag / env gate** (using the repo's existing pattern) so it is never
-   reachable in normal product navigation and is dead in production. Each
-   variant is a **self-contained, throwaway component** — duplication
+   clearly labeled with its idiom name. It MUST be gated by the **one
+   standard DX flag** — reuse `config.designExploreEnabled` from
+   `lib/config.ts` verbatim (`if (!config.designExploreEnabled) notFound()`
+   at the top of the page). That field is backed by the single env var
+   **`NEXT_PUBLIC_ENABLE_DESIGN_EXPLORE`**, which already exists on `main`
+   and on the Vercel preview environment. Do **NOT** invent a per-surface
+   flag, add a second/renamed env var, or hand-roll a `=== "1"` check — the
+   gate and its env var are shared across every DX surface, and adding a new
+   one (or a typo'd variant) is exactly the drift that breaks previews. You
+   do not configure Vercel env vars; the single flag is already set there.
+   Each variant is a **self-contained, throwaway component** — duplication
    between variants is fine and expected; shared abstraction is NOT the
    goal, divergence is.
 
