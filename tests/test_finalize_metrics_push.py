@@ -32,6 +32,7 @@ SUBS = {
     "claude_secret_name": "prog-strength-developer/claude-credentials",
     "github_app_secret_name": "prog-strength-developer/github-app",
     "manager_private_ip": "10.20.2.50",
+    "claude_model": "claude-fable-5",
 }
 
 INSTANCE_ID = "i-testinstance0001"
