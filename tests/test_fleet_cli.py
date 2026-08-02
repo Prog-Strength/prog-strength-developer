@@ -162,3 +162,27 @@ def test_release_defaults_prs_opened_to_zero():
         reg,
     )
     assert reg.list_history("sows/foo.md")[0].prs_opened == 0
+
+
+def test_resolve_model_prints_the_resolved_model(capsys):
+    reg = FakeRunRegistry()
+    code = run(["resolve-model", "--model", "claude-opus-5"], reg)
+    assert code == OK
+    assert capsys.readouterr().out.strip() == "claude-opus-5"
+
+
+def test_resolve_model_falls_back_to_the_default_when_blank(capsys):
+    reg = FakeRunRegistry()
+    code = run(["resolve-model", "--model", ""], reg)
+    assert code == OK
+    assert capsys.readouterr().out.strip() == "claude-fable-5"
+
+
+def test_resolve_model_rejects_an_unknown_model(capsys):
+    reg = FakeRunRegistry()
+    code = run(["resolve-model", "--model", "claude-opus-9"], reg)
+    assert code == ERROR
+    # Error goes to stderr so stdout stays clean for shell capture.
+    captured = capsys.readouterr()
+    assert captured.out.strip() == ""
+    assert "claude-opus-9" in captured.err
