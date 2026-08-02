@@ -818,17 +818,23 @@
               "Time": true,
               "Time 1": true,
               "Time 2": true,
-              "Time 3": true
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true
             },
             "indexByName": {
               "model": 0,
               "Value #A": 1,
-              "Value #B": 2,
-              "Value #C": 3
+              "Value #D": 2,
+              "Value #E": 3,
+              "Value #B": 4,
+              "Value #C": 5
             },
             "renameByName": {
               "model": "Model",
               "Value #A": "Runs",
+              "Value #D": "SOW runs",
+              "Value #E": "DX runs",
               "Value #B": "Compute-time",
               "Value #C": "Worker cost"
             }
@@ -842,6 +848,18 @@
           "format": "table",
           "instant": true,
           "refId": "A"
+        },
+        {
+          "expr": "sum by (model) (developer_history_runs_total{doc_type=\"sow\", outcome=~\"success|error|timeout\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "expr": "sum by (model) (developer_history_runs_total{doc_type=\"dx\", outcome=~\"success|error|timeout\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
         },
         {
           "expr": "sum by (model) (developer_history_compute_seconds_total)",

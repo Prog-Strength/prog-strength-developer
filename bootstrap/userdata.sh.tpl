@@ -110,7 +110,12 @@ EOF
 # Best-effort: on any failure the seeded dispatch value stays in place.
 observe_model() {
   local observed
-  observed=$(jq -r 'select(.type == "assistant") | .message.model // empty' \
+  # Drop "<synthetic>" — Claude Code stamps it on assistant messages it
+  # generates itself for API errors. tail -1 would otherwise pick it on a
+  # rate-limited run, which is exactly the case we most need a real name for,
+  # and it would become a junk Prometheus label.
+  observed=$(jq -r 'select(.type == "assistant") | .message.model // empty
+                    | select(. != "<synthetic>")' \
     /home/developer/.claude/projects/*/*.jsonl 2>/dev/null | tail -1 || true)
   if [ -n "$observed" ]; then
     log "Observed model: $observed"
@@ -197,10 +202,14 @@ mkdir -p /var/run/developer-worker
 echo booting > /var/run/developer-worker/state
 echo 0 > /var/run/developer-worker/prs_opened
 
-# Seed the model state file with the dispatched model BEFORE the ERR trap
-# has any chance to fire, so every release path — including a boot failure
-# long before Claude starts — reports something meaningful. Overwritten
-# after Claude exits with the model actually observed in its session log.
+# Seed the model state file with the dispatched model before any of the
+# failure-prone work below (installs, secrets, clones, the Claude run), so
+# every release path that can actually be reached reports something
+# meaningful. observe_model overwrites it with what Claude really ran.
+#
+# The ERR trap is already armed above, but nothing between there and here
+# can reach release_sow_lock anyway — it returns early until the repo is
+# cloned, which is far below.
 echo "${claude_model}" > /var/run/developer-worker/model
 
 # Derive a CloudWatch-stream-safe SOW slug from sow_path early so the

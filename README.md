@@ -105,7 +105,9 @@ different model under rate limits, the run-history row and the dashboard show
 the fallback — not the request. Runs dispatched before this existed read
 `unknown`.
 
-The **By model (all-time)** dashboard table breaks runs, compute-time, and
+The **By model (all-time)** dashboard table splits runs into **SOW runs** and
+**DX runs** per model — the distribution the model knob exists to let you
+manage — alongside total runs, compute-time, and
 worker cost down by model. That cost column is *worker* cost (EC2 wall-clock ×
 hourly rate), not token spend, which this platform cannot see.
 

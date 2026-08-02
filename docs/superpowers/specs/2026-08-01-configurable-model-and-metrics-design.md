@@ -148,17 +148,32 @@ answerable in a single PromQL query. Existing panels that `sum()` or
 `sum by (doc_type)` are unaffected by the extra label.
 
 Cardinality stays bounded: only observed pairs are emitted, and the model set is
-small and gated by `KNOWN_MODELS`.
+small.
+
+Note the *release* path is not gated by `KNOWN_MODELS` — `--model` there carries
+whatever the worker read out of Claude Code's session log, by design, since the
+whole point is to record a model we did not choose. The extraction drops
+`<synthetic>` (Claude Code's sentinel on self-generated API-error messages), so
+in practice the label space is the alias-form model IDs Claude Code writes. A
+future versioned ID would widen it; that is acceptable, and preferable to
+silently relabelling a real fallback as `unknown`.
 
 `bootstrap/ddb_exporter.py`'s `_LABELED` and `_HELP` maps follow.
 
 ### Dashboard (Lifetime / History section)
 
-- New **By model (all-time)** table: Runs, Compute-time, Worker cost — the same
-  shape as **By instance type**, which it sits beside, but the cost column is
-  labeled **Worker cost** rather than **Est. cost** here (the other tables'
-  row dimension already primes the reader to read "cost" as compute cost; a
-  model row doesn't), and rows sort by Runs descending.
+- New **By model (all-time)** table: Runs, **SOW runs**, **DX runs**,
+  Compute-time, Worker cost, sorted by Runs descending.
+
+  The per-`doc_type` columns are the point of the table, not a garnish: the
+  requirement is the distribution of *SOWs and DXs* by model, and a table keyed
+  on `model` alone collapses `doc_type` and cannot answer it. **By instance
+  type**, which this sits beside, has no equivalent split — so this is a
+  deliberate divergence from that template rather than an oversight.
+
+  The cost column is labeled **Worker cost** rather than **Est. cost** here: the
+  other tables' row dimension already primes the reader to read "cost" as
+  compute cost, and a model row doesn't.
 - The section's markdown text panel gains a line describing the model split.
 
 Note the cost column is *worker* cost (EC2 wall-clock × hourly rate), not token
