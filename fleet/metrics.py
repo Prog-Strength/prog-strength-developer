@@ -8,8 +8,11 @@ shell that maps those onto gauges and serves them.
 
 All metric names are prefixed ``developer_history_`` to namespace them
 apart from the live ``developer_worker_*`` / ``developer_run_*`` metrics.
-Labels are deliberately low-cardinality: ``doc_type`` (sow/dx/``all``) and
-``outcome`` (success/error/timeout/working).
+Labels are deliberately low-cardinality: ``doc_type`` (sow/dx/``all``),
+``outcome`` (success/error/timeout/working), ``compute_type`` (the EC2
+instance type), and ``model`` (the Claude model that authored the run).
+Only observed (compute_type, model) pairs are emitted, so the label space
+follows reality rather than the cross product.
 """
 
 from __future__ import annotations
@@ -92,8 +95,9 @@ def _duration_samples(doc_type: str, durations: list[int]) -> list[MetricSample]
 def aggregate(rows: list[RunHistory]) -> list[MetricSample]:
     """Compute the v1 metric samples from every run-history row.
 
-    Counts and PR sums are emitted for every (observed doc_type ×
-    canonical outcome) pair — including zeros — so a bucket that empties
+    PR sums are emitted for every (observed doc_type × canonical outcome)
+    pair, and run counts for every (observed doc_type × compute_type ×
+    model × canonical outcome) — including zeros — so a bucket that empties
     (a ``working`` row finalizing) resets its gauge instead of leaving a
     stale series. Duration/compute stats consider terminal rows only; the
     ``doc_type="all"`` duration series is always emitted (0 when empty) so
@@ -114,15 +118,19 @@ def aggregate(rows: list[RunHistory]) -> list[MetricSample]:
             )
 
         # Runs / compute-time / cost are additionally broken down by the
-        # resolved instance type (compute_type).
-        for compute_type in sorted({r.compute_type for r in dt_rows}):
-            ct_rows = [r for r in dt_rows if r.compute_type == compute_type]
-            base = {"doc_type": doc_type, "compute_type": compute_type}
+        # resolved instance type and the model that authored the run.
+        # Iterating observed pairs (not the cross product) keeps the series
+        # count proportional to what actually ran.
+        for compute_type, model in sorted({(r.compute_type, r.model) for r in dt_rows}):
+            pair_rows = [
+                r for r in dt_rows if r.compute_type == compute_type and r.model == model
+            ]
+            base = {"doc_type": doc_type, "compute_type": compute_type, "model": model}
             for outcome in OUTCOMES:
-                n = sum(1 for r in ct_rows if _bucket(r) == outcome)
+                n = sum(1 for r in pair_rows if _bucket(r) == outcome)
                 samples.append(MetricSample(RUNS_TOTAL, {**base, "outcome": outcome}, float(n)))
 
-            terminal = [r.duration_seconds for r in ct_rows if r.duration_seconds is not None]
+            terminal = [r.duration_seconds for r in pair_rows if r.duration_seconds is not None]
             seconds = float(sum(terminal))
             samples.append(MetricSample(COMPUTE_SECONDS_TOTAL, base, seconds))
             samples.append(MetricSample(COMPUTE_COST_TOTAL, base, seconds / 3600 * _hourly_rate(compute_type)))
