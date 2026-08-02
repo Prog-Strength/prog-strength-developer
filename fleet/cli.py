@@ -24,7 +24,7 @@ import uuid
 
 from fleet import service
 from fleet.config import DEFAULT_TTL_SECONDS, Config
-from fleet.models import RunStatus
+from fleet.models import RunStatus, validate_model
 from fleet.registry import FleetError, RunRegistry
 
 EXIT_OK = 0
@@ -64,6 +64,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     lst = sub.add_parser("list", help="show SOWs currently being built")
     lst.add_argument("--json", action="store_true")
+
+    res = sub.add_parser(
+        "resolve-model",
+        help="resolve + validate a model, printing it for the dispatch workflow to capture",
+    )
+    res.add_argument(
+        "--model",
+        default="",
+        help="candidate model; blank resolves to the default",
+    )
 
     return p
 
@@ -153,6 +163,16 @@ def run(argv: list[str], *, registry: RunRegistry, now: int) -> int:
             )
         else:
             print(service.active_table(active))
+        return EXIT_OK
+
+    if args.command == "resolve-model":
+        # stdout carries ONLY the resolved model so the workflow can capture
+        # it with $(...); the failure message goes to stderr.
+        try:
+            print(validate_model(args.model))
+        except ValueError as exc:
+            print(f"resolve-model failed: {exc}", file=sys.stderr)
+            return EXIT_ERROR
         return EXIT_OK
 
     return EXIT_ERROR  # unreachable: argparse enforces a known command
