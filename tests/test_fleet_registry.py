@@ -265,3 +265,69 @@ def test_attach_without_compute_type_leaves_the_acquire_default():
     reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL)
     reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110)
     assert reg.list_history("sows/foo.md")[0].compute_type == "ec2"
+
+
+def test_acquire_records_the_dispatched_model_on_history():
+    reg = FakeRunRegistry()
+    reg.try_acquire(
+        "sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=1000, model="claude-fable-5"
+    )
+    # Written at acquire so an in-flight (working) row carries a real
+    # model rather than landing in the "unknown" bucket.
+    assert reg.list_history("sows/foo.md")[0].model == "claude-fable-5"
+
+
+def test_acquire_without_a_model_defaults_to_unknown():
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=1000)
+    assert reg.list_history("sows/foo.md")[0].model == "unknown"
+
+
+def test_release_overwrites_the_model_with_the_observed_one():
+    reg = FakeRunRegistry()
+    reg.try_acquire(
+        "sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=1000, model="claude-fable-5"
+    )
+    reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110)
+    # The worker observed a different model than was dispatched — e.g. a
+    # fallback under rate limits. The row must record what actually ran.
+    reg.release(
+        "sows/foo.md", instance_id="i-1", outcome="success", now=460, model="claude-opus-5"
+    )
+    assert reg.list_history("sows/foo.md")[0].model == "claude-opus-5"
+
+
+def test_release_without_a_model_leaves_the_acquire_value():
+    reg = FakeRunRegistry()
+    reg.try_acquire(
+        "sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=1000, model="claude-fable-5"
+    )
+    reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110)
+    reg.release("sows/foo.md", instance_id="i-1", outcome="success", now=460)
+    assert reg.list_history("sows/foo.md")[0].model == "claude-fable-5"
+
+
+def test_superseded_release_does_not_overwrite_the_new_owner_model():
+    """The no-op-release contract extends to ``model``.
+
+    Today this holds because the ownership check returns before the patch
+    is built — correct by construction, not by assertion. Pin it, so a
+    reordering that moved the mutation ahead of the check would fail here
+    rather than silently mislabel the new owner's run on the dashboard.
+    """
+    reg = FakeRunRegistry()
+    reg.try_acquire("sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL, model="claude-opus-5")
+    reg.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-old", now=110)
+    reg.try_acquire(
+        "sows/foo.md", dispatch_id="d2", now=1200, ttl_seconds=TTL, model="claude-fable-5"
+    )
+    reg.attach_instance("sows/foo.md", dispatch_id="d2", instance_id="i-new", now=1210)
+
+    # The superseded worker reports the model IT observed. Neither row moves.
+    reg.release(
+        "sows/foo.md", instance_id="i-old", outcome="error", now=1300, model="claude-opus-5"
+    )
+
+    by_dispatch = {r.dispatch_id: r for r in reg.list_history("sows/foo.md")}
+    assert by_dispatch["d2"].model == "claude-fable-5"
+    assert by_dispatch["d1"].model == "claude-opus-5"

@@ -129,11 +129,12 @@ class RunHistory:
     """One immutable run-history row — the durable record of a single
     dispatch, distinct from the mutable per-ticket lock (:class:`RunRecord`).
 
-    Created at acquire with ``status=working`` and the dispatch metadata,
-    patched with ``instance_id`` at attach, and finalized at release with
-    the terminal ``outcome``/``finished_at``/``duration_seconds``/
-    ``prs_opened``. A row left at ``working`` with no ``finished_at`` is a
-    run that died or was superseded before releasing.
+    Created at acquire with ``status=working``, the dispatch metadata, and
+    the dispatched ``model``; patched with ``instance_id`` at attach; and
+    finalized at release with the terminal ``outcome``/``finished_at``/
+    ``duration_seconds``/``prs_opened`` and the ``model`` the worker
+    actually observed. A row left at ``working`` with no ``finished_at``
+    is a run that died or was superseded before releasing.
     """
 
     sow: str
@@ -143,6 +144,11 @@ class RunHistory:
     started_at: int
     updated_at: int
     compute_type: str = "ec2"
+    #: The model that authored this run. Written at acquire with the
+    #: dispatched value and overwritten at release with the model actually
+    #: observed in Claude Code's session log. Rows written before model
+    #: capture existed read "unknown".
+    model: str = "unknown"
     instance_id: str | None = None
     dispatched_by: str | None = None
     outcome: str | None = None
