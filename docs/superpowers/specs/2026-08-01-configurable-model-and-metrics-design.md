@@ -1,7 +1,7 @@
 # Configurable Claude model + per-model metrics
 
 **Date:** 2026-08-01
-**Status:** designed
+**Status:** implemented
 **Builds on:** instance-type capture ([2026-06-17-instance-type-and-cost-metrics-design.md](2026-06-17-instance-type-and-cost-metrics-design.md), merged in PR #23)
 
 ## Problem
@@ -40,10 +40,14 @@ userdata render, and `fleet acquire`.
 
 ### Validation gate
 
-`fleet/models.py` gains a `KNOWN_MODELS` frozenset and a `validate_model()`
-function; `fleet/cli.py` gains a `check-model` subcommand that exits non-zero on
-an unknown value. The dispatch workflow runs it immediately after `uv sync` —
-before the fleet-cap check, before the lock, before any instance.
+`fleet/models.py` gains `DEFAULT_MODEL`, a `KNOWN_MODELS` frozenset, and a
+`validate_model()` function; `fleet/cli.py` gains a `resolve-model` subcommand
+that applies the default floor, validates, and prints the resolved ID (exiting
+non-zero on an unknown value). The dispatch workflow captures its stdout
+immediately after `uv sync` — before the fleet-cap check, before the lock,
+before any instance. Folding the floor into the same command keeps
+`claude-fable-5` in exactly one place rather than duplicating it into the
+workflow YAML.
 
 Seed set:
 
@@ -68,8 +72,10 @@ dispatch before making it the repo default.
 `bootstrap/userdata.sh.tpl` gains a `${claude_model}` placeholder and invokes:
 
 ```sh
-claude --model "${claude_model}" --print --dangerously-skip-permissions
+claude --model '${claude_model}' --print --dangerously-skip-permissions
 ```
+
+(Single-quoted: that command already sits inside a double-quoted `bash -c "..."`.)
 
 Both renderers must supply the new key or they break:
 
@@ -89,14 +95,24 @@ worker reports what it observed.
 A new `/var/run/developer-worker/model` state file, mirroring `prs_opened`:
 
 - **Seeded** with `${claude_model}` alongside `echo 0 > .../prs_opened`, before
-  the ERR trap has any chance to fire. Guarantees every release path — including
-  a boot failure long before Claude starts — reports something meaningful.
-- **Overwritten** after `claude` exits with the last `message.model` seen in
-  `/home/developer/.claude/projects/*/*.jsonl`. These are the same session
-  event files the pretty-log renderer sidecar already tails, so this is one
-  `jq` line against a known-present file, not new plumbing. Best-effort: a
-  failed extraction leaves the seeded value in place.
-- **Read** by `release_sow_lock()`, which passes `--model "$model"`.
+  any failure-prone work runs. Guarantees every release path — including a boot
+  failure long before Claude starts — reports something meaningful.
+- **Overwritten** by an `observe_model()` helper with the last `message.model`
+  seen in `/home/developer/.claude/projects/*/*.jsonl`. These are the same
+  session event files the pretty-log renderer sidecar already tails, so this is
+  one `jq` line, not new plumbing. Best-effort: a failed extraction leaves the
+  seeded value in place.
+- **Read** by `release_sow_lock()`, which calls `observe_model` and then passes
+  `--model "$model"`.
+
+**`observe_model` is called from `release_sow_lock`, not inline after the
+`claude` invocation.** The inline placement was implemented first and rejected:
+the script runs under `set -euo pipefail` with an ERR trap wired to
+`terminate_self error`, so a nonzero `claude` exit fires the trap *before* any
+following line executes. Capturing there would have recorded the dispatched
+model on precisely the runs that matter most — a rate-limit fallback is most
+likely to end in a failed or degraded run. Routing through `release_sow_lock`
+puts the capture on both the clean-exit and ERR-trap paths.
 
 ### Persistence on the run-history row
 
@@ -138,8 +154,11 @@ small and gated by `KNOWN_MODELS`.
 
 ### Dashboard (Lifetime / History section)
 
-- New **By model (all-time)** table: Runs, Compute-time, Est. cost — the same
-  three columns as **By instance type**, which it sits beside.
+- New **By model (all-time)** table: Runs, Compute-time, Worker cost — the same
+  shape as **By instance type**, which it sits beside, but the cost column is
+  labeled **Worker cost** rather than **Est. cost** here (the other tables'
+  row dimension already primes the reader to read "cost" as compute cost; a
+  model row doesn't), and rows sort by Runs descending.
 - The section's markdown text panel gains a line describing the model split.
 
 Note the cost column is *worker* cost (EC2 wall-clock × hourly rate), not token

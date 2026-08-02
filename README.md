@@ -72,6 +72,43 @@ uv run python -m fleet list
 uv run python -m fleet release --sow sows/<name>.md --instance-id none --outcome error --force
 ```
 
+## Model selection
+
+Each worker runs Claude Code against one model, resolved at dispatch time —
+most specific wins:
+
+1. the **`model` input** on the "Dispatch ticket" workflow (blank = skip);
+2. the **`DEVELOPER_CLAUDE_MODEL` repository variable** (Settings → Secrets and
+   variables → Actions → Variables);
+3. the floor in `fleet/models.py` — currently `claude-fable-5`.
+
+The repository variable is the knob to turn when rate limits bite: edit it in
+the GitHub UI and every subsequent dispatch picks it up, with no PR and no
+deploy. Use the per-run input to try a model on one ticket without changing the
+default.
+
+The resolved value is validated against `KNOWN_MODELS` in `fleet/models.py`
+**before** the fleet-cap check, the SOW lock, or any instance launch, so a typo
+fails the workflow in seconds instead of booting a worker that dies four minutes
+later when `claude` rejects the flag. Adopting a new model means adding it to
+that set — a one-line PR.
+
+`KNOWN_MODELS` asserts "a real model ID we are willing to run", not "this
+subscription serves it": the worker authenticates with the Claude Code OAuth
+credentials in Secrets Manager, so availability is subscription-gated.
+**Smoke-test a model on one dispatch before making it the repo default.**
+
+**What gets recorded is what actually ran.** The worker seeds a state file with
+the dispatched model at boot, then overwrites it after Claude exits with the
+model observed in Claude Code's session log. If Claude Code falls back to a
+different model under rate limits, the run-history row and the dashboard show
+the fallback — not the request. Runs dispatched before this existed read
+`unknown`.
+
+The **By model (all-time)** dashboard table breaks runs, compute-time, and
+worker cost down by model. That cost column is *worker* cost (EC2 wall-clock ×
+hourly rate), not token spend, which this platform cannot see.
+
 ## SOW
 
 This repo implements `prog-strength-docs/sows/prog-strength-developer.md`.
