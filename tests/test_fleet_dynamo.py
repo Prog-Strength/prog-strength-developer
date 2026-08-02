@@ -169,3 +169,52 @@ def test_superseded_release_does_not_finalize_history(registry):
     by_dispatch = {r.dispatch_id: r for r in registry.list_history("sows/foo.md")}
     assert by_dispatch["d1"].status is RunStatus.WORKING
     assert by_dispatch["d1"].finished_at is None
+
+
+def test_acquire_persists_the_dispatched_model(registry):
+    registry.try_acquire(
+        "sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL, model="claude-fable-5"
+    )
+    assert registry.list_history("sows/foo.md")[0].model == "claude-fable-5"
+
+
+def test_release_persists_the_observed_model(registry):
+    registry.try_acquire(
+        "sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL, model="claude-fable-5"
+    )
+    registry.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110)
+    registry.release(
+        "sows/foo.md", instance_id="i-1", outcome="success", now=460, model="claude-opus-5"
+    )
+    assert registry.list_history("sows/foo.md")[0].model == "claude-opus-5"
+
+
+def test_release_without_a_model_leaves_the_acquire_value(registry):
+    registry.try_acquire(
+        "sows/foo.md", dispatch_id="d1", now=100, ttl_seconds=TTL, model="claude-fable-5"
+    )
+    registry.attach_instance("sows/foo.md", dispatch_id="d1", instance_id="i-1", now=110)
+    registry.release("sows/foo.md", instance_id="i-1", outcome="success", now=460)
+    assert registry.list_history("sows/foo.md")[0].model == "claude-fable-5"
+
+
+def test_legacy_history_row_without_model_reads_unknown(registry):
+    """Rows written before model capture existed must still deserialize."""
+    registry._table.put_item(
+        Item={
+            "sow": "sows/legacy.md",
+            "sk": "RUN#00000000000000000100#d0",
+            "dispatch_id": "d0",
+            "doc_type": "sow",
+            "compute_type": "ec2:t3.xlarge",
+            "status": "done",
+            "started_at": 100,
+            "updated_at": 460,
+            "outcome": "success",
+            "finished_at": 460,
+            "duration_seconds": 360,
+        }
+    )
+    row = registry.list_history("sows/legacy.md")[0]
+    assert row.model == "unknown"
+    assert row.compute_type == "ec2:t3.xlarge"
