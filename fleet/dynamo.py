@@ -101,6 +101,7 @@ class DynamoRunRegistry(RunRegistry):
         dispatched_by: str | None = None,
         doc_type: str | None = None,
         compute_type: str = "ec2",
+        model: str = "unknown",
     ) -> AcquireResult:
         record = RunRecord(
             sow=sow,
@@ -144,6 +145,7 @@ class DynamoRunRegistry(RunRegistry):
             started_at=now,
             updated_at=now,
             compute_type=compute_type,
+            model=model,
             dispatched_by=dispatched_by,
         )
         self._table.put_item(Item=_history_item(history))
@@ -199,6 +201,7 @@ class DynamoRunRegistry(RunRegistry):
         now: int,
         force: bool = False,
         prs_opened: int | None = None,
+        model: str | None = None,
     ) -> bool:
         status = RunStatus.from_outcome(outcome)
         values = {":status": status.value, ":now": now}
@@ -227,21 +230,36 @@ class DynamoRunRegistry(RunRegistry):
         # no-op release never touches anyone's history.
         lock = resp["Attributes"]
         started_at = int(lock["started_at"])
+        # The observed model, if the worker reported one, replaces the
+        # dispatched value written at acquire. Omitted → keep acquire's.
+        #
+        # Names and values are built together and conditionally: DynamoDB
+        # rejects an ExpressionAttributeNames entry the expression never
+        # references, so "#model" may only be declared when the SET clause
+        # actually uses it. ("model" is not a reserved word today, but
+        # aliasing costs nothing and survives that changing.)
+        history_update = (
+            "SET #status = :status, outcome = :outcome, "
+            "finished_at = :now, duration_seconds = :dur, "
+            "prs_opened = :prs, updated_at = :now"
+        )
+        history_names = {"#status": "status"}
+        history_values: dict = {
+            ":status": status.value,
+            ":outcome": outcome,
+            ":now": now,
+            ":dur": now - started_at,
+            ":prs": prs_opened,
+        }
+        if model is not None:
+            history_update += ", #model = :model"
+            history_names["#model"] = "model"
+            history_values[":model"] = model
         self._table.update_item(
             Key={"sow": sow, "sk": _run_sk(started_at, lock["dispatch_id"])},
-            UpdateExpression=(
-                "SET #status = :status, outcome = :outcome, "
-                "finished_at = :now, duration_seconds = :dur, "
-                "prs_opened = :prs, updated_at = :now"
-            ),
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":status": status.value,
-                ":outcome": outcome,
-                ":now": now,
-                ":dur": now - started_at,
-                ":prs": prs_opened,
-            },
+            UpdateExpression=history_update,
+            ExpressionAttributeNames=history_names,
+            ExpressionAttributeValues=history_values,
         )
         return True
 
@@ -287,6 +305,7 @@ def _history_item(history: RunHistory) -> dict:
         "dispatch_id": history.dispatch_id,
         "doc_type": history.doc_type,
         "compute_type": history.compute_type,
+        "model": history.model,
         "status": RunStatus(history.status).value,
         "started_at": history.started_at,
         "updated_at": history.updated_at,
@@ -309,6 +328,7 @@ def _to_history(item: dict) -> RunHistory:
         started_at=int(item["started_at"]),
         updated_at=int(item["updated_at"]),
         compute_type=item.get("compute_type", "ec2"),
+        model=item.get("model", "unknown"),
         instance_id=item.get("instance_id"),
         dispatched_by=item.get("dispatched_by"),
         outcome=item.get("outcome"),
