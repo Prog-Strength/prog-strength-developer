@@ -1,3 +1,24 @@
+# [0.14.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.13.2...v0.14.0) (2026-08-02)
+
+
+### Bug Fixes
+
+* **monitoring:** split By model runs into SOW and DX ([141d787](https://github.com/Prog-Strength/prog-strength-developer/commit/141d7878935ae0ea35bcc875132225f79ef38898))
+
+
+### Features
+
+* **dispatch:** resolve and validate the model before launching a worker ([5015794](https://github.com/Prog-Strength/prog-strength-developer/commit/501579464bd79ef1e26d2fb6548839f0a48e5889))
+* **fleet:** add model allowlist and validation ([ea7580d](https://github.com/Prog-Strength/prog-strength-developer/commit/ea7580d9bdcb7899080974e8a86f4b700f3f6313))
+* **fleet:** add resolve-model CLI subcommand ([e75d166](https://github.com/Prog-Strength/prog-strength-developer/commit/e75d166778c41cad43404b8fb55c509ece5d443b))
+* **fleet:** break run metrics down by model ([ee9e399](https://github.com/Prog-Strength/prog-strength-developer/commit/ee9e399bdc92f5965abc39d6eec8f9fcf32b84ca))
+* **fleet:** persist the run model in DynamoDB ([a1fef6e](https://github.com/Prog-Strength/prog-strength-developer/commit/a1fef6eaf4b5ba85d8f584e9c35d6b96c4e4ba65))
+* **fleet:** record the model on run-history rows ([2e5f650](https://github.com/Prog-Strength/prog-strength-developer/commit/2e5f650b59b7f4860fa12a585a4ffa3d95854c8b))
+* **fleet:** thread model through acquire and release ([29e71e4](https://github.com/Prog-Strength/prog-strength-developer/commit/29e71e44ad355e7f7e8c5ad23123ec4053955325))
+* **monitoring:** add a by-model breakdown to the dashboard ([1f15232](https://github.com/Prog-Strength/prog-strength-developer/commit/1f15232b7dc524bbc7a007674b8b374a99888a33))
+* **monitoring:** expose the model label on history gauges ([9669716](https://github.com/Prog-Strength/prog-strength-developer/commit/966971645ea4a48417f733fa88620e1d5a4de860))
+* **worker:** run a configurable model and record the observed one ([9cb410a](https://github.com/Prog-Strength/prog-strength-developer/commit/9cb410a2dc0e509bf71c7afc7deea1f8b285b214))
+
 ## [0.13.2](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.13.1...v0.13.2) (2026-06-19)
 
 
