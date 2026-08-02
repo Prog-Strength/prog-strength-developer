@@ -35,6 +35,7 @@ class FakeRunRegistry(RunRegistry):
         dispatched_by: str | None = None,
         doc_type: str | None = None,
         compute_type: str = "ec2",
+        model: str = "unknown",
     ) -> AcquireResult:
         existing = self._rows.get(sow)
         if existing is not None and existing.is_active(now):
@@ -59,6 +60,7 @@ class FakeRunRegistry(RunRegistry):
             started_at=now,
             updated_at=now,
             compute_type=compute_type,
+            model=model,
             dispatched_by=dispatched_by,
         )
         return AcquireResult(acquired=True, record=record)
@@ -94,6 +96,7 @@ class FakeRunRegistry(RunRegistry):
         now: int,
         force: bool = False,
         prs_opened: int | None = None,
+        model: str | None = None,
     ) -> bool:
         existing = self._rows.get(sow)
         if existing is None:
@@ -107,6 +110,8 @@ class FakeRunRegistry(RunRegistry):
         # run that actually held the SOW, not necessarily ``instance_id``.
         hist = self._history.get((sow, existing.dispatch_id))
         if hist is not None:
+            # An omitted model leaves the value written at acquire.
+            extra = {"model": model} if model is not None else {}
             self._history[(sow, existing.dispatch_id)] = replace(
                 hist,
                 status=RunStatus.from_outcome(outcome),
@@ -115,6 +120,7 @@ class FakeRunRegistry(RunRegistry):
                 duration_seconds=now - hist.started_at,
                 prs_opened=prs_opened,
                 updated_at=now,
+                **extra,
             )
         return True
 

@@ -32,6 +32,7 @@ class RunRegistry(ABC):
         dispatched_by: str | None = None,
         doc_type: str | None = None,
         compute_type: str = "ec2",
+        model: str = "unknown",
     ) -> AcquireResult:
         """Atomically claim ``sow`` for ``dispatch_id``.
 
@@ -41,7 +42,8 @@ class RunRegistry(ABC):
 
         On success, also appends an immutable run-history row (status
         ``working``) carrying ``doc_type`` (derived from the ticket path
-        when None) and ``compute_type`` for the durable record.
+        when None), ``compute_type``, and the dispatched ``model`` for the
+        durable record.
         """
 
     @abstractmethod
@@ -69,6 +71,7 @@ class RunRegistry(ABC):
         now: int,
         force: bool = False,
         prs_opened: int | None = None,
+        model: str | None = None,
     ) -> bool:
         """Mark the run terminal, freeing the SOW. Returns True if
         released. A non-matching ``instance_id`` is a no-op (returns
@@ -77,8 +80,11 @@ class RunRegistry(ABC):
 
         When the lock is actually released, the matching run-history row
         is finalized with the ``outcome``, ``finished_at``,
-        ``duration_seconds``, and ``prs_opened``. A no-op release leaves
-        history untouched, so a superseded run's row stays ``working``."""
+        ``duration_seconds``, and ``prs_opened``. When ``model`` is given
+        it replaces the value written at acquire — the worker reports the
+        model it actually observed, which can differ from the dispatched
+        one. A no-op release leaves history untouched, so a superseded
+        run's row stays ``working``."""
 
     @abstractmethod
     def get(self, sow: str) -> RunRecord | None:
