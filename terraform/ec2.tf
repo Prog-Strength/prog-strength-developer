@@ -17,6 +17,7 @@ locals {
   base_userdata = templatefile("${path.module}/../bootstrap/userdata.sh.tpl", {
     aws_region             = var.aws_region
     sow_path               = ""
+    claude_model           = "" # overridden by the workflow render
     github_org             = var.github_org
     log_group_name         = aws_cloudwatch_log_group.worker.name
     max_runtime_hours      = var.max_runtime_hours

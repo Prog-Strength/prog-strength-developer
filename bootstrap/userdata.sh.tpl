@@ -87,6 +87,39 @@ EOF
   sleep 2
 }
 
+# Record the model Claude ACTUALLY ran, which can differ from the one we
+# asked for (e.g. a fallback under rate limits) — and that divergence is
+# precisely what the per-model dashboard exists to surface. Assistant
+# events in the session JSONL carry message.model; take the last one.
+#
+# Called from release_sow_lock so it runs on BOTH the clean-exit path and
+# the ERR-trap path. set -e means a nonzero `claude` fires the trap before
+# any post-invocation line executes, and a failed run is exactly when a
+# fallback is most likely — capturing only on success would record the
+# dispatched model for the rows that most need the observed one.
+#
+# Two invariants this relies on, both held by release_sow_lock's
+# fleet-package guard (it returns early until the repo is cloned, which
+# happens long after jq installs and after the single claude run):
+#   1. jq exists by the time this runs.
+#   2. The glob matches exactly ONE session file, so `tail -1` is the last
+#      event of this run. There is no retry/resume path today. If one is
+#      ever added, note the shell expands this glob lexicographically and
+#      session filenames are UUIDs — ordering would stop tracking time.
+#
+# Best-effort: on any failure the seeded dispatch value stays in place.
+observe_model() {
+  local observed
+  observed=$(jq -r 'select(.type == "assistant") | .message.model // empty' \
+    /home/developer/.claude/projects/*/*.jsonl 2>/dev/null | tail -1 || true)
+  if [ -n "$observed" ]; then
+    log "Observed model: $observed"
+    echo "$observed" > /var/run/developer-worker/model || true
+  else
+    log "Could not observe a model in the session log; keeping dispatched value"
+  fi
+}
+
 # Release this worker's SOW lock in the fleet run registry so the SOW can
 # be dispatched again. Best-effort by design: if the fleet package isn't
 # on disk yet (a failure before the repo clone) or the call errors, the
@@ -104,12 +137,19 @@ release_sow_lock() {
   # run-history row records it alongside the Pushgateway metric.
   local prs_count
   prs_count=$(cat /var/run/developer-worker/prs_opened 2>/dev/null || echo 0)
-  log "Releasing SOW lock for ${sow_path} (outcome=$outcome, prs=$prs_count)"
+  observe_model
+  # The model the run actually used — seeded with the dispatched value at
+  # boot, overwritten by observe_model with what Claude actually ran.
+  local model
+  model=$(cat /var/run/developer-worker/model 2>/dev/null || echo unknown)
+  [ -n "$model" ] || model=unknown
+  log "Releasing SOW lock for ${sow_path} (outcome=$outcome, prs=$prs_count, model=$model)"
   AWS_REGION="${aws_region}" PYTHONPATH="$repo" python3 -m fleet release \
     --sow "${sow_path}" \
     --instance-id "$${INSTANCE_ID:-none}" \
     --outcome "$outcome" \
-    --prs-opened "$prs_count" || log "fleet release errored (TTL will reclaim the lock)"
+    --prs-opened "$prs_count" \
+    --model "$model" || log "fleet release errored (TTL will reclaim the lock)"
 }
 
 terminate_self() {
@@ -156,6 +196,12 @@ export STARTED_AT
 mkdir -p /var/run/developer-worker
 echo booting > /var/run/developer-worker/state
 echo 0 > /var/run/developer-worker/prs_opened
+
+# Seed the model state file with the dispatched model BEFORE the ERR trap
+# has any chance to fire, so every release path — including a boot failure
+# long before Claude starts — reports something meaningful. Overwritten
+# after Claude exits with the model actually observed in its session log.
+echo "${claude_model}" > /var/run/developer-worker/model
 
 # Derive a CloudWatch-stream-safe SOW slug from sow_path early so the
 # CW agent config below can name streams after the SOW. basename strips
@@ -693,7 +739,7 @@ log "Starting Claude Code (as non-root user 'developer')"
 # remains in claude-pretty.log via the renderer sidecar above
 # (CW stream "claude").
 sudo -i -u developer -- \
-  bash -c "cd $WORKDIR && ANTHROPIC_LOG=debug claude --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
+  bash -c "cd $WORKDIR && ANTHROPIC_LOG=debug claude --model '${claude_model}' --print --dangerously-skip-permissions < $WORKDIR/prompt.md" \
   > "$LOG_DIR/claude.log" 2>&1
 
 CLAUDE_EXIT=$?
