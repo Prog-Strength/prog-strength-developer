@@ -186,3 +186,51 @@ def test_resolve_model_rejects_an_unknown_model(capsys):
     captured = capsys.readouterr()
     assert captured.out.strip() == ""
     assert "claude-opus-9" in captured.err
+
+
+def test_acquire_threads_model_into_history():
+    reg = FakeRunRegistry()
+    run(
+        ["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1",
+         "--model", "claude-fable-5"],
+        reg,
+    )
+    assert reg.list_history("sows/foo.md")[0].model == "claude-fable-5"
+
+
+def test_acquire_without_model_records_unknown():
+    reg = FakeRunRegistry()
+    run(["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1"], reg)
+    assert reg.list_history("sows/foo.md")[0].model == "unknown"
+
+
+def test_release_threads_observed_model_into_history():
+    reg = FakeRunRegistry()
+    run(
+        ["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1",
+         "--model", "claude-fable-5"],
+        reg,
+        now=100,
+    )
+    run(["attach", "--sow", "sows/foo.md", "--dispatch-id", "d1", "--instance-id", "i-1"], reg)
+    code = run(
+        ["release", "--sow", "sows/foo.md", "--instance-id", "i-1",
+         "--outcome", "success", "--model", "claude-opus-5"],
+        reg,
+        now=460,
+    )
+    assert code == OK
+    assert reg.list_history("sows/foo.md")[0].model == "claude-opus-5"
+
+
+def test_release_without_model_keeps_the_acquire_value():
+    reg = FakeRunRegistry()
+    run(
+        ["acquire", "--sow", "sows/foo.md", "--dispatch-id", "d1",
+         "--model", "claude-fable-5"],
+        reg,
+        now=100,
+    )
+    run(["attach", "--sow", "sows/foo.md", "--dispatch-id", "d1", "--instance-id", "i-1"], reg)
+    run(["release", "--sow", "sows/foo.md", "--instance-id", "i-1"], reg, now=460)
+    assert reg.list_history("sows/foo.md")[0].model == "claude-fable-5"

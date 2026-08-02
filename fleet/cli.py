@@ -41,6 +41,12 @@ def _build_parser() -> argparse.ArgumentParser:
     acq.add_argument("--dispatch-id", default=None, help="defaults to a fresh UUID")
     acq.add_argument("--dispatched-by", default=None)
     acq.add_argument("--ttl", type=int, default=DEFAULT_TTL_SECONDS)
+    acq.add_argument(
+        "--model",
+        default="unknown",
+        help="model this dispatch will run; recorded on the run-history row. "
+        "Omitted, the row records 'unknown'.",
+    )
     acq.add_argument("--json", action="store_true")
 
     att = sub.add_parser("attach", help="record the launched instance on a held lock")
@@ -60,6 +66,12 @@ def _build_parser() -> argparse.ArgumentParser:
     rel.add_argument("--force", action="store_true", help="operator override; ignore instance match")
     rel.add_argument(
         "--prs-opened", type=int, default=0, help="PRs this run opened; recorded in run history"
+    )
+    rel.add_argument(
+        "--model",
+        default=None,
+        help="model the worker actually observed; replaces the value recorded at acquire. "
+        "Omitted (e.g. an operator --force release), acquire's value is kept.",
     )
 
     lst = sub.add_parser("list", help="show SOWs currently being built")
@@ -89,6 +101,7 @@ def run(argv: list[str], *, registry: RunRegistry, now: int) -> int:
             now=now,
             ttl_seconds=args.ttl,
             dispatched_by=args.dispatched_by,
+            model=args.model,
         )
         if result.acquired:
             if args.json:
@@ -135,6 +148,7 @@ def run(argv: list[str], *, registry: RunRegistry, now: int) -> int:
             now=now,
             force=args.force,
             prs_opened=args.prs_opened,
+            model=args.model,
         )
         if released:
             print(f"Released {args.sow!r} (outcome={args.outcome}).")
