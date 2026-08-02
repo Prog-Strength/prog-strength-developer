@@ -86,6 +86,44 @@ def doc_type_for_path(path: str) -> str:
     return _DOC_TYPE_BY_DIR.get(head, head)
 
 
+#: The model the worker runs when nothing else is configured. Chosen as
+#: the platform's floor because the workload is long-horizon agentic work.
+DEFAULT_MODEL = "claude-fable-5"
+
+#: Models this platform is willing to dispatch. The gate is deliberately
+#: fail-closed: a typo'd model would otherwise boot a t3.xlarge that dies
+#: ~4 minutes in when `claude` rejects the flag, burning a dispatch cycle
+#: and churning the SOW lock. Adding a new model is a one-line PR here.
+#:
+#: This asserts "a real model ID we are willing to run" — NOT "this
+#: subscription serves it". The worker authenticates with Claude Code
+#: OAuth credentials, so availability is subscription-gated; smoke-test a
+#: model on one dispatch before making it the repo default.
+KNOWN_MODELS = frozenset(
+    {
+        "claude-fable-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+    }
+)
+
+
+def validate_model(model: str | None) -> str:
+    """Resolve and validate a dispatch's model.
+
+    Blank or None means "unset" — the dispatch workflow passes an empty
+    string when neither the per-run input nor the repo variable is set —
+    and resolves to :data:`DEFAULT_MODEL`. Anything outside
+    :data:`KNOWN_MODELS` raises :class:`ValueError`.
+    """
+    resolved = (model or "").strip() or DEFAULT_MODEL
+    if resolved not in KNOWN_MODELS:
+        options = ", ".join(sorted(KNOWN_MODELS))
+        raise ValueError(f"unknown model {resolved!r}; expected one of: {options}")
+    return resolved
+
+
 @dataclass
 class RunHistory:
     """One immutable run-history row — the durable record of a single
