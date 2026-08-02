@@ -12,6 +12,16 @@ on:
         required: true
         type: string
 
+      # Optional per-run override. Blank means "use the repo default"
+      # (vars.DEVELOPER_CLAUDE_MODEL, else the floor in fleet/models.py).
+      # Change the repo variable in Settings → Variables to shift every
+      # future dispatch — no PR, no deploy.
+      model:
+        description: "Claude model override (blank = repo default)"
+        required: false
+        default: ""
+        type: string
+
 permissions:
   id-token: write
   contents: read
@@ -45,6 +55,26 @@ jobs:
       - name: Sync fleet dependencies
         run: uv sync
 
+      # Resolve the model once: per-run input, else the repo variable, else
+      # the floor in fleet/models.py. Validation is fail-closed against the
+      # KNOWN_MODELS allowlist — a typo here would otherwise boot a
+      # t3.xlarge that dies ~4 minutes in when `claude` rejects the flag.
+      - name: Resolve model
+        id: resolve_model
+        env:
+          CANDIDATE: ${{ inputs.model || vars.DEVELOPER_CLAUDE_MODEL }}
+        run: |
+          set +e
+          RESOLVED=$(uv run python -m fleet resolve-model --model "$CANDIDATE")
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::error::Unrecognized model '$CANDIDATE'. Set inputs.model or vars.DEVELOPER_CLAUDE_MODEL to a model in fleet/models.py::KNOWN_MODELS, or add it there in a one-line PR."
+            exit 1
+          fi
+          echo "Resolved model: $RESOLVED"
+          echo "model=$RESOLVED" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -72,12 +102,14 @@ jobs:
         id: acquire
         env:
           SOW_PATH: ${{ inputs.sow_path }}
+          MODEL: ${{ steps.resolve_model.outputs.model }}
         run: |
           set +e
           uv run python -m fleet acquire \
             --sow "$SOW_PATH" \
             --dispatch-id "$GITHUB_RUN_ID" \
-            --dispatched-by "$GITHUB_ACTOR"
+            --dispatched-by "$GITHUB_ACTOR" \
+            --model "$MODEL"
           code=$?
           set -e
           if [ "$code" -eq 3 ]; then
@@ -112,6 +144,7 @@ jobs:
         env:
           SOW_PATH: ${{ inputs.sow_path }}
           MGR_PRIVATE_IP: ${{ steps.infra.outputs.manager_private_ip }}
+          CLAUDE_MODEL: ${{ steps.resolve_model.outputs.model }}
         run: |
           # bootstrap/userdata.sh.tpl carries TWO kinds of placeholder:
           # 1) Terraform's ${name} for runtime values we substitute here
@@ -134,6 +167,7 @@ jobs:
               "claude_secret_name": "prog-strength-developer/claude-credentials",
               "github_app_secret_name": "prog-strength-developer/github-app",
               "manager_private_ip": os.environ["MGR_PRIVATE_IP"],
+              "claude_model": os.environ["CLAUDE_MODEL"],
           }
           for k, v in subs.items():
               src = src.replace("${" + k + "}", v)
@@ -189,6 +223,7 @@ jobs:
         env:
           SOW_PATH: ${{ inputs.sow_path }}
           IID: ${{ steps.run.outputs.instance_id }}
+          MODEL: ${{ steps.resolve_model.outputs.model }}
         run: |
           SOW_SLUG=$(basename "$SOW_PATH" .md | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')
           PREFIX="$SOW_SLUG/$IID"
@@ -199,6 +234,7 @@ jobs:
             echo ""
             echo "- **SOW:** \`$SOW_PATH\`"
             echo "- **Instance ID:** \`$IID\`"
+            echo "- **Model:** \`$MODEL\` (the run records the model actually observed, which can differ under rate limits)"
             echo ""
             echo "### Live dashboard"
             echo "<https://developers.progstrength.fitness/d/developer-platform>"
