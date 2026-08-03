@@ -1,3 +1,10 @@
+## [0.14.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.14.0...v0.14.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* **terraform:** stop apply from revoking the Loki ingress rule ([e40a2aa](https://github.com/Prog-Strength/prog-strength-developer/commit/e40a2aa38ab1cbe7aa6b332f0759071196a005a3))
+
 # [0.14.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.13.2...v0.14.0) (2026-08-02)
 
 
