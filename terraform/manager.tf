@@ -22,8 +22,18 @@ resource "aws_route_table_association" "manager_public" {
 }
 
 # Manager security group: 80/443 from the world (Caddy + Let's Encrypt
-# HTTP-01), 9091 from workers (Pushgateway final-state push). 3100
-# (Loki) is added later in the stretch goal. All outbound open.
+# HTTP-01), 9091 from workers (Pushgateway final-state push), 3100 from
+# workers (Promtail -> Loki, the dashboard's live Claude log tail). All
+# outbound open.
+#
+# Every rule this group needs MUST live inline here. An inline ingress
+# block makes the config authoritative for ingress, so each apply revokes
+# any ingress rule on the group that isn't listed below — including one
+# declared elsewhere as a standalone aws_security_group_rule. The Loki
+# rule was declared that way and every apply from 2026-06-16 on revoked
+# it, silently emptying the "Live Claude output" panel. See
+# tests/test_terraform_security_groups.py, which fails if the split
+# reappears.
 resource "aws_security_group" "manager" {
   name        = "prog-strength-developer-manager-sg"
   description = "Developer manager - Caddy public, Pushgateway from worker SG."
@@ -49,6 +59,17 @@ resource "aws_security_group" "manager" {
     description     = "Pushgateway from workers."
     from_port       = 9091
     to_port         = 9091
+    protocol        = "tcp"
+    security_groups = [aws_security_group.worker.id]
+  }
+
+  # Promtail on each worker ships claude-pretty.log here so Grafana's
+  # "Live Claude output" panel has something to tail. Worker SG only,
+  # never a CIDR — Loki runs with auth_enabled: false.
+  ingress {
+    description     = "Loki push from workers (live Claude log tail)."
+    from_port       = 3100
+    to_port         = 3100
     protocol        = "tcp"
     security_groups = [aws_security_group.worker.id]
   }
@@ -226,19 +247,4 @@ resource "aws_eip" "manager" {
   tags = {
     Name = "prog-strength-developer-manager-eip"
   }
-}
-
-# --------------------------------------------------------------------
-# Stretch goal SG rules: workers push Promtail logs to Loki on :3100.
-# The worker SG's broad egress already permits this; the explicit
-# rule documents intent and survives any future tightening of egress.
-# --------------------------------------------------------------------
-resource "aws_security_group_rule" "manager_ingress_loki" {
-  type                     = "ingress"
-  from_port                = 3100
-  to_port                  = 3100
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.worker.id
-  security_group_id        = aws_security_group.manager.id
-  description              = "Loki push from workers (stretch goal)."
 }
