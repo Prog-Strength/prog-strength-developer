@@ -1,3 +1,10 @@
+# [0.15.0](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.14.1...v0.15.0) (2026-08-09)
+
+
+### Features
+
+* **fleet:** default dispatches to claude-opus-5 ([92befc3](https://github.com/Prog-Strength/prog-strength-developer/commit/92befc3c69cdf591b91ec291277f105ee4e47855))
+
 ## [0.14.1](https://github.com/Prog-Strength/prog-strength-developer/compare/v0.14.0...v0.14.1) (2026-08-03)
 
 
