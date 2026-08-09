@@ -175,7 +175,7 @@ def test_resolve_model_falls_back_to_the_default_when_blank(capsys):
     reg = FakeRunRegistry()
     code = run(["resolve-model", "--model", ""], reg)
     assert code == OK
-    assert capsys.readouterr().out.strip() == "claude-fable-5"
+    assert capsys.readouterr().out.strip() == "claude-opus-5"
 
 
 def test_resolve_model_rejects_an_unknown_model(capsys):

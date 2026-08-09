@@ -80,7 +80,7 @@ most specific wins:
 1. the **`model` input** on the "Dispatch ticket" workflow (blank = skip);
 2. the **`DEVELOPER_CLAUDE_MODEL` repository variable** (Settings → Secrets and
    variables → Actions → Variables);
-3. the floor in `fleet/models.py` — currently `claude-fable-5`.
+3. the floor in `fleet/models.py` — currently `claude-opus-5`.
 
 The repository variable is the knob to turn when rate limits bite: edit it in
 the GitHub UI and every subsequent dispatch picks it up, with no PR and no

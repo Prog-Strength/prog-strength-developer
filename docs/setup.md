@@ -127,7 +127,7 @@ variables → Actions:
 **Variables (not Secrets):**
 - `TF_STATE_BUCKET` — the bucket name from step 4.
 - `DEVELOPER_CLAUDE_MODEL` — *optional.* The model workers run. Unset falls back
-  to the floor in `fleet/models.py` (`claude-fable-5`). This is the knob to turn
+  to the floor in `fleet/models.py` (`claude-opus-5`). This is the knob to turn
   when rate limits bite — see [Model selection](../README.md#model-selection).
 
 **Secrets:**

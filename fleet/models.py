@@ -86,9 +86,12 @@ def doc_type_for_path(path: str) -> str:
     return _DOC_TYPE_BY_DIR.get(head, head)
 
 
-#: The model the worker runs when nothing else is configured. Chosen as
-#: the platform's floor because the workload is long-horizon agentic work.
-DEFAULT_MODEL = "claude-fable-5"
+#: The model the worker runs when nothing else is configured. Opus 5 is
+#: the tier below `claude-fable-5` and is built for exactly this workload
+#: — long-horizon agentic coding — at half the token cost, so it is the
+#: floor the platform settles on when no per-run input or repo variable
+#: raises it.
+DEFAULT_MODEL = "claude-opus-5"
 
 #: Models this platform is willing to dispatch. The gate is deliberately
 #: fail-closed: a typo'd model would otherwise boot a t3.xlarge that dies
